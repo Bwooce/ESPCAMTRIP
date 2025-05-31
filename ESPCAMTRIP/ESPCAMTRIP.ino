@@ -44,7 +44,7 @@ void setup() {
   Serial.println("\n=== ESP32-S3-CAM Multi-Function System ===");
   Serial.println("Version: 2.0.0");
   Serial.println("Features: Photo Capture, S3 Upload, NTRIP RTK");
-  Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
+  Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap()); // %d -> %u
   
   // Initialize system
   initializeSystem();
@@ -271,7 +271,7 @@ void uploadTask(void* parameter) {
 void performHealthCheck() {
   Serial.println("\n--- Health Check ---");
   Serial.printf("Uptime: %lu seconds\n", millis() / 1000);
-  Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
+  Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap()); // %d -> %u
   Serial.printf("WiFi RSSI: %d dBm\n", WiFi.RSSI());
   
   // Check SD card

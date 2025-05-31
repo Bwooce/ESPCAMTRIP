@@ -117,7 +117,7 @@ bool CameraManager::capturePhoto() {
   if (written == fb->len) {
     photoCount++;
     SystemState::incrementPhotoCount();
-    Serial.printf("Photo %04d saved: %d bytes\n", photoCount - 1, fb->len);
+    Serial.printf("Photo %04d saved: %u bytes\n", photoCount - 1, fb->len); // %d -> %u
     return true;
   }
   
@@ -199,8 +199,8 @@ camera_config_t CameraManager::getCameraConfig() {
   config.pin_pclk = Config::cameraPins.PCLK_GPIO_NUM;
   config.pin_vsync = Config::cameraPins.VSYNC_GPIO_NUM;
   config.pin_href = Config::cameraPins.HREF_GPIO_NUM;
-  config.pin_sscb_sda = Config::cameraPins.SIOD_GPIO_NUM;
-  config.pin_sscb_scl = Config::cameraPins.SIOC_GPIO_NUM;
+  config.pin_sccb_sda = Config::cameraPins.SIOD_GPIO_NUM;
+  config.pin_sccb_scl = Config::cameraPins.SIOC_GPIO_NUM;
   config.pin_pwdn = Config::cameraPins.PWDN_GPIO_NUM;
   config.pin_reset = Config::cameraPins.RESET_GPIO_NUM;
   config.xclk_freq_hz = Config::camera.XCLK_FREQ;
@@ -242,7 +242,7 @@ void CameraManager::applyCameraSettings() {
 }
 
 bool CameraManager::createCaptureDirectory() {
-  struct tm timeinfo;
+  struct tm timeinfo = {0}; // Initialized
   if (!getLocalTime(&timeinfo)) {
     Serial.println("Failed to get time for directory name");
     return false;

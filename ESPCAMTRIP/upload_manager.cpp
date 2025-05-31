@@ -12,7 +12,7 @@ std::vector<String> UploadManager::uploadedDirectories;
 uint32_t UploadManager::totalUploaded = 0;
 uint32_t UploadManager::totalFailed = 0;
 
-static  void UploadManager::loadTracking() {
+void UploadManager::loadTracking() {
   Serial.println("Loading upload tracking...");
   
   uploadedDirectories.clear();
@@ -38,10 +38,10 @@ static  void UploadManager::loadTracking() {
   
   StorageManager::closeFile(file);
   
-  Serial.printf("Loaded %d uploaded directories\n", uploadedDirectories.size());
+  Serial.printf("Loaded %u uploaded directories\n", uploadedDirectories.size()); // Changed %d to %u
 }
 
-static void UploadManager::saveTracking() {
+void UploadManager::saveTracking() {
   File file = StorageManager::openFile(Config::storage.UPLOAD_TRACKING_FILE, "w");
   if (!file) {
     Serial.println("Failed to save upload tracking");
@@ -170,7 +170,7 @@ bool UploadManager::uploadDirectory(const String& directoryPath) {
   return (successCount == uploadCount && uploadCount > 0);
 }
 
-static bool UploadManager::uploadFile(File& file, const String& directoryPath) {
+bool UploadManager::uploadFile(File& file, const String& directoryPath) {
   if (!file) return false;
   
   // Generate S3 key
