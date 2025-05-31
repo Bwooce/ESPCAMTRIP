@@ -59,6 +59,10 @@ void setup() {
     &cameraTaskHandle,
     0
   );
+  if (cameraTaskHandle == NULL) {
+    Serial.println("FATAL: Failed to create CameraTask!");
+    // ESP.restart(); // Or handle error appropriately
+  }
   
   // Create upload task on core 0
   xTaskCreatePinnedToCore(
@@ -70,6 +74,10 @@ void setup() {
     &uploadTaskHandle,
     0
   );
+  if (uploadTaskHandle == NULL) {
+    Serial.println("FATAL: Failed to create UploadTask!");
+    // ESP.restart(); // Or handle error appropriately
+  }
   
   // Create NTRIP task on core 1
   if (Config::ntrip.enabled) {
@@ -82,7 +90,12 @@ void setup() {
       &ntripTaskHandle,
       1
     );
-    Serial.println("NTRIP client initialized on core 1");
+    if (ntripTaskHandle == NULL) {
+      Serial.println("FATAL: Failed to create NTRIPClientTask!");
+      // ESP.restart(); // Or handle error appropriately
+    } else {
+      Serial.println("NTRIP client initialized on core 1");
+    }
   }
   
   Serial.println("\n=== System Ready ===");
@@ -125,7 +138,10 @@ void initializeSystem() {
   }
   
   // Load configuration from SD card if exists
-  Config::loadFromFile();
+  if (!Config::loadFromFile()) {
+    Serial.println("WARNING: Failed to load configuration from file or critical settings are missing. System may not operate correctly.");
+    // Depending on severity, could halt or use hardcoded critical defaults
+  }
   
   // Initialize network (WiFi)
   if (!WiFiManager::connectWiFi()) {

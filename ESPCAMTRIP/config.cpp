@@ -12,8 +12,8 @@ namespace Config {
     5      // MAX_RECONNECT_ATTEMPTS
   };
   S3Config s3 = {
-    "YOUR_AWS_ACCESS_KEY",
-    "YOUR_AWS_SECRET_KEY",
+    "YOUR_AWS_ACCESS_KEY", // Now a String
+    "YOUR_AWS_SECRET_KEY", // Now a String
     "us-east-1",
     "your-bucket-name",
     4096, // UPLOAD_BUFFER_SIZE
@@ -77,6 +77,12 @@ namespace Config {
     // Load S3 settings
     if (!doc["s3"].isNull()) {
       JsonObject s3Obj = doc["s3"].as<JsonObject>();
+      if (!s3Obj["access_key"].isNull()) {
+        s3.access_key = s3Obj["access_key"].as<String>();
+      }
+      if (!s3Obj["secret_key"].isNull()) {
+        s3.secret_key = s3Obj["secret_key"].as<String>();
+      }
       if (!s3Obj["region"].isNull()) {
         s3.region = s3Obj["region"].as<String>();
       }
@@ -230,6 +236,10 @@ namespace Config {
     Serial.printf("Connection Timeout: %lu ms\n", wifi.CONNECTION_TIMEOUT);
 
     Serial.println("\n[S3]");
+    // Note: Printing keys directly is a security risk in production.
+    // For debugging, this is fine. Consider printing "[set]" or partial keys.
+    Serial.printf("Access Key: %s\n", s3.access_key.c_str());
+    Serial.printf("Secret Key: %s\n", s3.secret_key.c_str()); // Mask this in production
     Serial.printf("Region: %s\n", s3.region.c_str());
     Serial.printf("Bucket: %s\n", s3.bucket.c_str());
     Serial.printf("Max Upload Retries: %d\n", s3.MAX_UPLOAD_RETRIES); // size_t, %d is likely fine for small values

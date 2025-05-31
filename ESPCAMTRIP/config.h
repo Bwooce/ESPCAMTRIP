@@ -18,8 +18,8 @@ namespace Config {
   
   // AWS S3 Configuration
   struct S3Config {
-    const char* access_key = "YOUR_AWS_ACCESS_KEY";
-    const char* secret_key = "YOUR_AWS_SECRET_KEY";
+    String access_key; // Changed from const char*
+    String secret_key; // Changed from const char*
     String region;
     String bucket;
     const size_t UPLOAD_BUFFER_SIZE = 4096;
