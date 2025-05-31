@@ -35,9 +35,9 @@ void PowerManager::init() {
     setCpuFrequency(Config::power.CPU_FREQ_NORMAL);
     
     // Configure dynamic frequency scaling
-    esp_pm_config_esp32s3_t pm_config = {
-      .max_freq_mhz = Config::power.CPU_FREQ_CAPTURE,
-      .min_freq_mhz = Config::power.CPU_FREQ_IDLE,
+    esp_pm_config_t pm_config = {
+      .max_freq_mhz = static_cast<int>(Config::power.CPU_FREQ_CAPTURE),
+      .min_freq_mhz = static_cast<int>(Config::power.CPU_FREQ_IDLE),
       .light_sleep_enable = true
     };
     
@@ -51,7 +51,7 @@ void PowerManager::init() {
   
   // Initialize battery monitoring if available
   adc1_config_width(ADC_WIDTH_BIT_12);
-  adc1_config_channel_atten((adc1_channel_t)BATTERY_ADC_CHANNEL, ADC_ATTEN_DB_11);
+  adc1_config_channel_atten((adc1_channel_t)BATTERY_ADC_CHANNEL, ADC_ATTEN_DB_12);
   
   initialized = true;
   lastPowerCheck = millis();
@@ -86,7 +86,7 @@ void PowerManager::enterLightSleep(uint32_t durationMs) {
   }
   
   // Configure timer wake-up
-  esp_sleep_enable_timer_wakeup(durationMs * 1000); // Convert to microseconds
+  esp_sleep_enable_timer_wakeup(durationMs * 1000ULL); // Convert to microseconds, ensure ULL for large values
   
   // Enter light sleep
   esp_light_sleep_start();
@@ -102,7 +102,7 @@ void PowerManager::setCpuFrequency(uint32_t freqMhz) {
   
   // Validate frequency
   if (freqMhz != 240 && freqMhz != 160 && freqMhz != 80) {
-    Serial.printf("Invalid CPU frequency: %d MHz\n", freqMhz);
+    Serial.printf("Invalid CPU frequency: %u MHz\n", freqMhz);
     return;
   }
   
@@ -110,7 +110,7 @@ void PowerManager::setCpuFrequency(uint32_t freqMhz) {
   setCpuFrequencyMhz(freqMhz);
   currentCpuFreq = freqMhz;
   
-  Serial.printf("CPU frequency set to %d MHz\n", freqMhz);
+  Serial.printf("CPU frequency set to %u MHz\n", freqMhz);
 }
 
 void PowerManager::disableUnusedPeripherals() {
@@ -176,7 +176,7 @@ void PowerManager::configureWakeupSources() {
   
   // Configure EXT1 wake-up (multiple pins)
   uint64_t pin_mask = (1ULL << capturePin) | (1ULL << uploadPin);
-  esp_sleep_enable_ext1_wakeup(pin_mask, ESP_EXT1_WAKEUP_ALL_LOW);
+  esp_sleep_enable_ext1_wakeup(pin_mask, ESP_EXT1_WAKEUP_ANY_LOW);
   
   // Configure timer wake-up (will be set when entering sleep)
   // esp_sleep_enable_timer_wakeup() - called when needed

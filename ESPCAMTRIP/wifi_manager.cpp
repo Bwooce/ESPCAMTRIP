@@ -115,7 +115,7 @@ bool WiFiManager::initializeTime() {
     timeSynchronized = true;
     
     // Print current time
-    struct tm timeinfo;
+    struct tm timeinfo = {0}; // Initialized
     if (getLocalTime(&timeinfo)) {
       Serial.print("Time synchronized: ");
       Serial.println(&timeinfo, "%Y-%m-%d %H:%M:%S");
@@ -137,7 +137,7 @@ bool WiFiManager::isTimeSynchronized() {
   // Check if time is still valid (year > 2020)
   time_t now;
   time(&now);
-  struct tm timeinfo;
+  struct tm timeinfo = {0}; // Initialized
   localtime_r(&now, &timeinfo);
   
   return (timeinfo.tm_year + 1900) > 2020;
@@ -150,7 +150,7 @@ String WiFiManager::getCurrentTimestamp() {
   
   time_t now;
   time(&now);
-  struct tm timeinfo;
+  struct tm timeinfo = {0}; // Initialized
   localtime_r(&now, &timeinfo);
   
   char timestamp[30];
@@ -196,7 +196,7 @@ void WiFiManager::handleDisconnect() {
   disconnectCount++;
   
   Serial.println("WiFi connection lost!");
-  Serial.printf("Disconnect count: %d\n", disconnectCount);
+  Serial.printf("Disconnect count: %u\n", disconnectCount); // %d -> %u
   
   digitalWrite(Config::pins.LED_STATUS_PIN, LOW);
   
@@ -214,7 +214,7 @@ bool WiFiManager::waitForTimeSync(uint32_t timeoutMs) {
   while (millis() - startTime < timeoutMs) {
     time_t now;
     time(&now);
-    struct tm timeinfo;
+    struct tm timeinfo = {0}; // Initialized
     
     if (getLocalTime(&timeinfo, 100)) { // 100ms timeout for getLocalTime
       // Check if time is valid (year > 2020)

@@ -30,6 +30,7 @@ public:
   // Status
   static int getPhotoCount();
   static String getCurrentDirectory();
+  static bool isCameraPin(int pin); // Moved to public
   
 private:
   static bool initialized;
@@ -44,7 +45,7 @@ private:
   static String generateFilename();
   
   // Pin validation
-  static bool isCameraPin(int pin);
+  // static bool isCameraPin(int pin); // Removed from private
 };
 
 #endif // CAMERA_MANAGER_H

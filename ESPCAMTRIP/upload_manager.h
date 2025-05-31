@@ -2,6 +2,7 @@
 #define UPLOAD_MANAGER_H
 
 #include <Arduino.h>
+#include <FS.h> // Added FS.h for File type
 #include <vector>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>

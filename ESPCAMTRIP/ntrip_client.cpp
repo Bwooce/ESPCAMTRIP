@@ -257,7 +257,7 @@ bool NtripClient::connectToNtrip() {
                       (WiFiClient*)&secureClient : 
                       (WiFiClient*)&standardClient;
   
-  if (!client->connect(Config::ntrip.server, Config::ntrip.port)) {
+  if (!client->connect(Config::ntrip.server.c_str(), Config::ntrip.port)) {
     Serial.println("Connection to NTRIP caster failed");
     return false;
   }
@@ -314,7 +314,7 @@ void NtripClient::sendGgaToNtrip() {
     
     if (client->connected()) {
       client->println(Config::ntrip.gga_message);
-      client->flush();
+      client->clear(); // flush -> clear
       lastGgaTime = millis();
     }
   }
