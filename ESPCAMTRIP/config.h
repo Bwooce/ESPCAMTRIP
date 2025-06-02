@@ -45,8 +45,8 @@ namespace Config {
     const uint8_t CAPTURE_TRIGGER_PIN = 2; // Was 1, changed to GPIO2 (XIAO D0/IO2)
     const uint8_t UPLOAD_TRIGGER_PIN = 4;  // Was 2, changed to GPIO4 (XIAO D2/IO4)
     const uint8_t LED_STATUS_PIN = 21;     // Was 33, changed to GPIO21 (built-in LED)
-    const uint8_t RTCM_UART_TX = 5;        // Was 3, changed to GPIO5 (XIAO D3/IO5)
-    const uint8_t RTCM_UART_RX = -1;       // Unchanged
+    const uint8_t RTCM_UART_TX = 6;        //
+    const uint8_t RTCM_UART_RX = 7;       // 
   };
   
   // Camera Pin Configuration
