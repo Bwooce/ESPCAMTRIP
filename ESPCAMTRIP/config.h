@@ -42,11 +42,11 @@ namespace Config {
   
   // Pin Configuration
   struct PinConfig {
-    const uint8_t CAPTURE_TRIGGER_PIN = 1;
-    const uint8_t UPLOAD_TRIGGER_PIN = 2;
-    const uint8_t LED_STATUS_PIN = 33;  // 2 for ESP32-C3
-    const uint8_t RTCM_UART_TX = 3;
-    const uint8_t RTCM_UART_RX = -1;  // Not used but defined
+    const uint8_t CAPTURE_TRIGGER_PIN = 2; // Was 1, changed to GPIO2 (XIAO D0/IO2)
+    const uint8_t UPLOAD_TRIGGER_PIN = 4;  // Was 2, changed to GPIO4 (XIAO D2/IO4)
+    const uint8_t LED_STATUS_PIN = 21;     // Was 33, changed to GPIO21 (built-in LED)
+    const uint8_t RTCM_UART_TX = 5;        // Was 3, changed to GPIO5 (XIAO D3/IO5)
+    const uint8_t RTCM_UART_RX = -1;       // Unchanged
   };
   
   // Camera Pin Configuration
@@ -54,7 +54,24 @@ namespace Config {
     const int8_t PWDN_GPIO_NUM = -1;
     const int8_t RESET_GPIO_NUM = -1;
     const uint8_t XCLK_GPIO_NUM = 10;
-    const uint8_t SIOD_GPIO_NUM = 40;
+    const uint8_t SIOD_GPIO_NUM = 40; // D(-)=40, D(+)=39 on schematic, but seems this is for I2C. Camera DVP uses other pins.
+                                      // Standard XIAO ESP32S3 Sense Camera pins are:
+                                      // XCLK: 10
+                                      // PCLK: 13
+                                      // VSYNC: 38
+                                      // HREF: 47
+                                      // D0/Y2: 15
+                                      // D1/Y3: 17
+                                      // D2/Y4: 18
+                                      // D3/Y5: 16
+                                      // D4/Y6: 14
+                                      // D5/Y7: 12
+                                      // D6/Y8: 11
+                                      // D7/Y9: 48
+                                      // SIOC: 39 (SCCB Clock)
+                                      // SIOD: 40 (SCCB Data)
+                                      // PWDN: -1 (not connected on XIAO schematic for camera itself)
+                                      // RESET: -1
     const uint8_t SIOC_GPIO_NUM = 39;
     const uint8_t Y9_GPIO_NUM = 48;
     const uint8_t Y8_GPIO_NUM = 11;
