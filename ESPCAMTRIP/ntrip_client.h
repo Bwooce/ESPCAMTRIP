@@ -6,6 +6,7 @@
 #include <WiFiClientSecure.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/portmacro.h>
 #include <HardwareSerial.h>
 
 // RTCM Message definitions
@@ -96,8 +97,13 @@ private:
   
   // RTCM buffer for message assembly
   static uint8_t rtcmBuffer[RTCM_MAX_LENGTH + RTCM_HEADER_LENGTH + 3];
-  static int rtcmBufferIndex;
-  static bool inMessage;
+  static volatile int rtcmBufferIndex;
+  static volatile bool inMessage;
+  
+  // Thread safety
+  static portMUX_TYPE ntripMux;
+  static void enterCritical();
+  static void exitCritical();
   
   // CRC24Q table
   static const unsigned int crc24qtab[256];

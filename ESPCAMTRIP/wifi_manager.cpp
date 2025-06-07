@@ -7,6 +7,7 @@ bool WiFiManager::connected = false;
 unsigned long WiFiManager::connectionStartTime = 0;
 uint32_t WiFiManager::disconnectCount = 0;
 bool WiFiManager::timeSynchronized = false;
+portMUX_TYPE WiFiManager::wifiMux = portMUX_INITIALIZER_UNLOCKED;
 
 bool WiFiManager::connectWiFi() {
   Serial.print("Connecting to WiFi: ");
@@ -30,9 +31,11 @@ bool WiFiManager::connectWiFi() {
   int attempts = 0;
   
   while (WiFi.status() != WL_CONNECTED) {
-    if (millis() - startAttempt > Config::wifi.CONNECTION_TIMEOUT) {
+    if (isTimeElapsed(startAttempt, Config::wifi.CONNECTION_TIMEOUT)) {
       Serial.println("\nWiFi connection timeout!");
+      enterCritical();
       connected = false;
+      exitCritical();
       return false;
     }
     
@@ -48,8 +51,10 @@ bool WiFiManager::connectWiFi() {
   }
   
   // Connection successful
+  enterCritical();
   connected = true;
   connectionStartTime = millis();
+  exitCritical();
   
   Serial.println("\nWiFi connected!");
   Serial.print("IP address: ");
@@ -68,9 +73,15 @@ bool WiFiManager::connectWiFi() {
 }
 
 void WiFiManager::disconnectWiFi() {
+  enterCritical();
+  bool wasConnected = connected;
   if (connected) {
-    WiFi.disconnect(true);
     connected = false;
+  }
+  exitCritical();
+  
+  if (wasConnected) {
+    WiFi.disconnect(true);
     Serial.println("WiFi disconnected");
   }
 }
@@ -78,27 +89,50 @@ void WiFiManager::disconnectWiFi() {
 bool WiFiManager::isConnected() {
   // Update connection status
   bool currentStatus = (WiFi.status() == WL_CONNECTED);
+  bool result;
   
+  enterCritical();
   // Handle state changes
   if (connected && !currentStatus) {
-    handleDisconnect();
+    connected = false;
+    disconnectCount++;
+    result = false;
   } else if (!connected && currentStatus) {
     connected = true;
     connectionStartTime = millis();
+    result = true;
+  } else {
+    result = connected;
+  }
+  exitCritical();
+  
+  // Handle disconnect logging outside critical section
+  if (connected != currentStatus && !currentStatus) {
+    Serial.println("WiFi connection lost!");
+    Serial.printf("Disconnect count: %u\n", disconnectCount);
+    digitalWrite(Config::pins.LED_STATUS_PIN, LOW);
   }
   
-  return connected;
+  return result;
 }
 
 int WiFiManager::getRSSI() {
-  if (connected) {
+  enterCritical();
+  bool isConn = connected;
+  exitCritical();
+  
+  if (isConn) {
     return WiFi.RSSI();
   }
   return -100; // Return very weak signal if not connected
 }
 
 String WiFiManager::getIPAddress() {
-  if (connected) {
+  enterCritical();
+  bool isConn = connected;
+  exitCritical();
+  
+  if (isConn) {
     return WiFi.localIP().toString();
   }
   return "0.0.0.0";
@@ -112,7 +146,9 @@ bool WiFiManager::initializeTime() {
   
   // Wait for time to be set
   if (waitForTimeSync(10000)) { // 10 second timeout
+    enterCritical();
     timeSynchronized = true;
+    exitCritical();
     
     // Print current time
     struct tm timeinfo = {0}; // Initialized
@@ -125,12 +161,18 @@ bool WiFiManager::initializeTime() {
   }
   
   Serial.println("Time synchronization failed!");
+  enterCritical();
   timeSynchronized = false;
+  exitCritical();
   return false;
 }
 
 bool WiFiManager::isTimeSynchronized() {
-  if (!timeSynchronized) {
+  enterCritical();
+  bool timeSync = timeSynchronized;
+  exitCritical();
+  
+  if (!timeSync) {
     return false;
   }
   
@@ -181,29 +223,27 @@ void WiFiManager::checkConnection() {
 }
 
 uint32_t WiFiManager::getConnectionUptime() {
-  if (connected) {
-    return (millis() - connectionStartTime) / 1000; // Return seconds
+  enterCritical();
+  bool isConn = connected;
+  unsigned long startTime = connectionStartTime;
+  exitCritical();
+  
+  if (isConn) {
+    return (millis() - startTime) / 1000; // Return seconds
   }
   return 0;
 }
 
 uint32_t WiFiManager::getDisconnectCount() {
-  return disconnectCount;
+  enterCritical();
+  uint32_t count = disconnectCount;
+  exitCritical();
+  return count;
 }
 
 void WiFiManager::handleDisconnect() {
-  connected = false;
-  disconnectCount++;
-  
-  Serial.println("WiFi connection lost!");
-  Serial.printf("Disconnect count: %u\n", disconnectCount); // %d -> %u
-  
-  digitalWrite(Config::pins.LED_STATUS_PIN, LOW);
-  
-  // Log disconnect event
-  String logEntry = getCurrentTimestamp() + " - WiFi disconnected. Count: " + String(disconnectCount);
-  // Note: Can't use StorageManager here due to circular dependency
-  // Could implement a simple log queue instead
+  // This function is now deprecated - disconnect handling moved to isConnected()
+  // Left here for compatibility but should not be called
 }
 
 bool WiFiManager::waitForTimeSync(uint32_t timeoutMs) {
@@ -211,7 +251,7 @@ bool WiFiManager::waitForTimeSync(uint32_t timeoutMs) {
   
   Serial.print("Waiting for NTP time sync");
   
-  while (millis() - startTime < timeoutMs) {
+  while (!isTimeElapsed(startTime, timeoutMs)) {
     time_t now;
     time(&now);
     struct tm timeinfo = {0}; // Initialized
@@ -230,4 +270,18 @@ bool WiFiManager::waitForTimeSync(uint32_t timeoutMs) {
   
   Serial.println(" TIMEOUT");
   return false;
+}
+
+void WiFiManager::enterCritical() {
+  portENTER_CRITICAL(&wifiMux);
+}
+
+void WiFiManager::exitCritical() {
+  portEXIT_CRITICAL(&wifiMux);
+}
+
+bool WiFiManager::isTimeElapsed(unsigned long startTime, unsigned long interval) {
+  // Overflow-safe time comparison
+  unsigned long currentTime = millis();
+  return (currentTime - startTime) >= interval;
 }

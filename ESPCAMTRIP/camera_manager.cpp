@@ -117,7 +117,7 @@ bool CameraManager::capturePhoto() {
   if (written == fb->len) {
     photoCount++;
     SystemState::incrementPhotoCount();
-    Serial.printf("Photo %04d saved: %u bytes\n", photoCount - 1, fb->len); // %d -> %u
+    Serial.printf("Photo %04d saved: %u bytes\n", photoCount - 1, (unsigned)fb->len);
     return true;
   }
   

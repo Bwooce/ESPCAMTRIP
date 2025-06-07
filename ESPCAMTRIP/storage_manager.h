@@ -14,9 +14,14 @@ public:
   static bool init();
   static bool verifyCard();
   
-  // File operations (thread-safe)
+  // File operations (WARNING: openFile/closeFile has race condition)
+  // Mutex is released before file handle returned - use atomic operations when possible
   static File openFile(const String& path, const char* mode);
   static bool closeFile(File& file);
+  
+  // Thread-safe atomic file operations (recommended)
+  static bool writeFileAtomic(const String& path, const uint8_t* data, size_t size);
+  static bool readFileAtomic(const String& path, std::vector<uint8_t>& data);
   static bool exists(const String& path);
   static bool remove(const String& path);
   static bool mkdir(const String& path);

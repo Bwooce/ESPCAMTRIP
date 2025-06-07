@@ -124,7 +124,12 @@ void UploadManager::uploadPendingDirectories() {
         Serial.printf("✗ Upload failed (attempt %d/%d)\n", 
                       retry + 1, Config::s3.MAX_UPLOAD_RETRIES);
         if (retry < Config::s3.MAX_UPLOAD_RETRIES - 1) {
-          delay(2000); // Wait before retry
+          // Exponential backoff: 2^retry * 1000ms (1s, 2s, 4s, 8s...)
+          uint32_t backoffDelay = (1 << retry) * 1000;
+          // Cap at 30 seconds
+          backoffDelay = min(backoffDelay, 30000U);
+          Serial.printf("Waiting %u ms before retry...\n", backoffDelay);
+          delay(backoffDelay);
         }
       }
     }

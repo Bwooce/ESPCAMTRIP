@@ -16,8 +16,9 @@ unsigned long NtripClient::lastActivity = 0;
 int NtripClient::reconnectCount = 0;
 bool NtripClient::clientRunning = false;
 uint8_t NtripClient::rtcmBuffer[RTCM_MAX_LENGTH + RTCM_HEADER_LENGTH + 3];
-int NtripClient::rtcmBufferIndex = 0;
-bool NtripClient::inMessage = false;
+volatile int NtripClient::rtcmBufferIndex = 0;
+volatile bool NtripClient::inMessage = false;
+portMUX_TYPE NtripClient::ntripMux = portMUX_INITIALIZER_UNLOCKED;
 
 // CRC24Q table
 const unsigned int NtripClient::crc24qtab[256] = {
@@ -94,61 +95,84 @@ bool NtripClient::init() {
     // Optional: secureClient.setInsecure(); // For testing
   }
   
+  enterCritical();
   clientRunning = false;
+  exitCritical();
   Serial.println("NTRIP client initialized");
   return true;
 }
 
 void NtripClient::startClient() {
+  enterCritical();
   clientRunning = true;
   stats.connected = false;
   stats.rtcmDataReceived = false;
+  exitCritical();
 }
 
 void NtripClient::stopClient() {
+  enterCritical();
   clientRunning = false;
+  stats.connected = false;
+  exitCritical();
+  
   if (Config::ntrip.use_ssl) {
     secureClient.stop();
   } else {
     standardClient.stop();
   }
-  stats.connected = false;
 }
 
 bool NtripClient::isConnected() {
-  return stats.connected;
+  enterCritical();
+  bool connected = stats.connected;
+  exitCritical();
+  return connected;
 }
 
 bool NtripClient::isReceivingRTCM() {
-  return stats.rtcmDataReceived && 
-         (millis() - stats.lastMessageTime < Config::ntrip.RTCM_TIMEOUT);
+  enterCritical();
+  bool receiving = stats.rtcmDataReceived && 
+                   (millis() - stats.lastMessageTime < Config::ntrip.RTCM_TIMEOUT);
+  exitCritical();
+  return receiving;
 }
 
 NtripClient::Statistics NtripClient::getStatistics() {
-  return stats;
+  enterCritical();
+  Statistics localStats = stats;
+  exitCritical();
+  return localStats;
 }
 
 void NtripClient::printStatistics() {
-  Serial.println("NTRIP Statistics:");
-  Serial.printf("  Connected: %s\n", stats.connected ? "Yes" : "No");
-  Serial.printf("  Messages received: %u\n", stats.messagesReceived);
-  Serial.printf("  Messages validated: %u\n", stats.messagesValidated);
-  Serial.printf("  Messages forwarded: %u\n", stats.messagesForwarded);
-  Serial.printf("  Bytes received: %u\n", stats.bytesReceived);
-  Serial.printf("  Connection attempts: %u\n", stats.connectionAttempts);
+  Statistics localStats = getStatistics();
   
-  if (stats.lastMessageTime > 0) {
-    Serial.printf("  Last message: %lu ms ago\n", millis() - stats.lastMessageTime);
+  Serial.println("NTRIP Statistics:");
+  Serial.printf("  Connected: %s\n", localStats.connected ? "Yes" : "No");
+  Serial.printf("  Messages received: %u\n", localStats.messagesReceived);
+  Serial.printf("  Messages validated: %u\n", localStats.messagesValidated);
+  Serial.printf("  Messages forwarded: %u\n", localStats.messagesForwarded);
+  Serial.printf("  Bytes received: %u\n", localStats.bytesReceived);
+  Serial.printf("  Connection attempts: %u\n", localStats.connectionAttempts);
+  
+  if (localStats.lastMessageTime > 0) {
+    Serial.printf("  Last message: %lu ms ago\n", millis() - localStats.lastMessageTime);
   }
 }
 
 void NtripClient::notifyActivity() {
+  enterCritical();
   lastActivity = millis();
+  exitCritical();
   SystemState::updateNtripActivity();
 }
 
 bool NtripClient::isIdle() {
-  return (millis() - lastActivity > 5000);
+  enterCritical();
+  unsigned long activity = lastActivity;
+  exitCritical();
+  return (millis() - activity > 5000);
 }
 
 unsigned int NtripClient::calculateCRC24Q(const uint8_t* buf, int len) {
@@ -199,53 +223,73 @@ bool NtripClient::shouldRelayMessage(int messageType) {
 }
 
 void NtripClient::processRtcmData(const uint8_t* buffer, size_t size) {
+  enterCritical();
   stats.bytesReceived += size;
+  exitCritical();
   
   for (size_t i = 0; i < size; i++) {
     uint8_t byte = buffer[i];
     
+    enterCritical();
+    bool wasInMessage = inMessage;
+    int currentIndex = rtcmBufferIndex;
+    
     if (!inMessage && byte == RTCM_PREAMBLE) {
       rtcmBufferIndex = 0;
       inMessage = true;
+      wasInMessage = true;
+      currentIndex = 0;
     }
     
-    if (inMessage) {
-      if (rtcmBufferIndex < sizeof(rtcmBuffer)) {
-        rtcmBuffer[rtcmBufferIndex++] = byte;
+    if (wasInMessage) {
+      if (currentIndex < sizeof(rtcmBuffer)) {
+        rtcmBuffer[currentIndex] = byte;
+        rtcmBufferIndex = currentIndex + 1;
         
         if (rtcmBufferIndex >= RTCM_MIN_LENGTH) {
           int messageLength = ((rtcmBuffer[1] & 0x03) << 8) | rtcmBuffer[2];
           
           if (messageLength > RTCM_MAX_LENGTH) {
             inMessage = false;
+            exitCritical();
             continue;
           }
           
           if (rtcmBufferIndex >= messageLength + RTCM_HEADER_LENGTH + 3) {
-            stats.messagesReceived++;
+            // Message complete - copy to local buffer for processing
+            uint8_t localBuffer[RTCM_MAX_LENGTH + RTCM_HEADER_LENGTH + 3];
+            int localBufferSize = rtcmBufferIndex;
+            memcpy(localBuffer, rtcmBuffer, localBufferSize);
             
-            if (validateRtcmMessage(rtcmBuffer, rtcmBufferIndex)) {
-              stats.messagesValidated++;
-              int messageType = extractRtcmMessageType(rtcmBuffer, rtcmBufferIndex);
+            stats.messagesReceived++;
+            inMessage = false;
+            exitCritical();
+            
+            // Process outside critical section
+            if (validateRtcmMessage(localBuffer, localBufferSize)) {
+              int messageType = extractRtcmMessageType(localBuffer, localBufferSize);
               
               msgStats.addMessage(messageType);
               
               if (shouldRelayMessage(messageType)) {
-                sendMavLinkRTCM(rtcmBuffer, rtcmBufferIndex);
+                sendMavLinkRTCM(localBuffer, localBufferSize);
+                
+                enterCritical();
+                stats.messagesValidated++;
                 stats.messagesForwarded++;
+                stats.rtcmDataReceived = true;
+                stats.lastMessageTime = millis();
+                exitCritical();
               }
-              
-              stats.rtcmDataReceived = true;
-              stats.lastMessageTime = millis();
             }
-            
-            inMessage = false;
+            continue;
           }
         }
       } else {
         inMessage = false;
       }
     }
+    exitCritical();
   }
 }
 
@@ -515,15 +559,23 @@ void ntripClientTask(void* parameter) {
     if (!connected) {
       if (NtripClient::connectToNtrip()) {
         connected = true;
+        NtripClient::enterCritical();
+        NtripClient::stats.connected = true;
+        NtripClient::exitCritical();
         digitalWrite(Config::pins.LED_STATUS_PIN, HIGH);
         client = Config::ntrip.use_ssl ? 
                 (WiFiClient*)&NtripClient::secureClient : 
                 (WiFiClient*)&NtripClient::standardClient;
       } else {
+        NtripClient::enterCritical();
         NtripClient::reconnectCount++;
-        if (NtripClient::reconnectCount >= Config::wifi.MAX_RECONNECT_ATTEMPTS) {
+        int currentReconnectCount = NtripClient::reconnectCount;
+        NtripClient::exitCritical();
+        if (currentReconnectCount >= Config::wifi.MAX_RECONNECT_ATTEMPTS) {
           Serial.println("Max NTRIP reconnect attempts reached");
+          NtripClient::enterCritical();
           NtripClient::reconnectCount = 0;
+          NtripClient::exitCritical();
         }
         delay(Config::wifi.RECONNECT_DELAY);
         continue;
@@ -561,7 +613,9 @@ void ntripClientTask(void* parameter) {
       if (!client->connected()) {
         Serial.println("NTRIP connection lost");
         connected = false;
+        NtripClient::enterCritical();
         NtripClient::stats.connected = false;
+        NtripClient::exitCritical();
         delay(1000);
         continue;
       }
@@ -573,4 +627,12 @@ void ntripClientTask(void* parameter) {
     // Small delay
     delay(10);
   }
+}
+
+void NtripClient::enterCritical() {
+  portENTER_CRITICAL(&ntripMux);
+}
+
+void NtripClient::exitCritical() {
+  portEXIT_CRITICAL(&ntripMux);
 }

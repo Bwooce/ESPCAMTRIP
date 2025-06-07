@@ -200,6 +200,7 @@ std::vector<String> StorageManager::listDirectory(const String& path) {
   File file = root.openNextFile();
   while (file) {
     files.push_back(String(file.name()));
+    file.close();
     file = root.openNextFile();
   }
   
@@ -230,6 +231,7 @@ std::vector<String> StorageManager::getCaptureDirectories() {
         directories.push_back(dirName);
       }
     }
+    file.close();
     file = root.openNextFile();
   }
   
@@ -465,4 +467,49 @@ void StorageManager::giveMutex() {
   if (sdMutex != NULL) {
     xSemaphoreGive(sdMutex);
   }
+}
+
+bool StorageManager::writeFileAtomic(const String& path, const uint8_t* data, size_t size) {
+  if (!initialized || !takeMutex(5000)) {
+    return false;
+  }
+  
+  File file = SD_MMC.open(path.c_str(), "w");
+  if (!file) {
+    giveMutex();
+    return false;
+  }
+  
+  size_t written = file.write(data, size);
+  file.close();
+  
+  giveMutex();
+  return written == size;
+}
+
+bool StorageManager::readFileAtomic(const String& path, std::vector<uint8_t>& data) {
+  if (!initialized || !takeMutex(5000)) {
+    return false;
+  }
+  
+  File file = SD_MMC.open(path.c_str(), "r");
+  if (!file) {
+    giveMutex();
+    return false;
+  }
+  
+  size_t fileSize = file.size();
+  data.resize(fileSize);
+  
+  size_t bytesRead = file.read(data.data(), fileSize);
+  file.close();
+  
+  giveMutex();
+  
+  if (bytesRead != fileSize) {
+    data.clear();
+    return false;
+  }
+  
+  return true;
 }

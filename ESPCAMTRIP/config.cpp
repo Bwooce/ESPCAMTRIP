@@ -242,7 +242,7 @@ namespace Config {
     Serial.printf("Secret Key: %s\n", s3.secret_key.c_str()); // Mask this in production
     Serial.printf("Region: %s\n", s3.region.c_str());
     Serial.printf("Bucket: %s\n", s3.bucket.c_str());
-    Serial.printf("Max Upload Retries: %d\n", s3.MAX_UPLOAD_RETRIES); // size_t, %d is likely fine for small values
+    Serial.printf("Max Upload Retries: %zu\n", s3.MAX_UPLOAD_RETRIES);
 
     Serial.println("\n[NTRIP]");
     Serial.printf("Enabled: %s\n", ntrip.enabled ? "Yes" : "No");

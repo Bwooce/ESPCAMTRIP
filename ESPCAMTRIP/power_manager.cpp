@@ -8,6 +8,7 @@
 #include <esp_bt.h>
 #include <esp_bt_main.h>
 #include <esp_wifi.h>
+#include <esp_err.h>
 #include <driver/adc.h>
 
 // Static member definitions
@@ -132,13 +133,30 @@ void PowerManager::disableUnusedPeripherals() {
 }
 
 void PowerManager::disableBluetooth() {
-  // Disable Bluetooth controller
-  esp_bluedroid_disable();
-  esp_bluedroid_deinit();
-  esp_bt_controller_disable();
-  esp_bt_controller_deinit();
+  // Disable Bluetooth controller with error checking
+  esp_err_t err;
   
-  Serial.println("Bluetooth disabled");
+  err = esp_bluedroid_disable();
+  if (err != ESP_OK) {
+    Serial.printf("Failed to disable Bluedroid: %s\n", esp_err_to_name(err));
+  }
+  
+  err = esp_bluedroid_deinit();
+  if (err != ESP_OK) {
+    Serial.printf("Failed to deinit Bluedroid: %s\n", esp_err_to_name(err));
+  }
+  
+  err = esp_bt_controller_disable();
+  if (err != ESP_OK) {
+    Serial.printf("Failed to disable BT controller: %s\n", esp_err_to_name(err));
+  }
+  
+  err = esp_bt_controller_deinit();
+  if (err != ESP_OK) {
+    Serial.printf("Failed to deinit BT controller: %s\n", esp_err_to_name(err));
+  } else {
+    Serial.println("Bluetooth disabled successfully");
+  }
 }
 
 void PowerManager::configureUnusedPins() {

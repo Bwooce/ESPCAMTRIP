@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <time.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/portmacro.h>
 
 class WiFiManager {
 public:
@@ -30,9 +32,15 @@ private:
   static uint32_t disconnectCount;
   static bool timeSynchronized;
   
+  // Thread safety
+  static portMUX_TYPE wifiMux;
+  static void enterCritical();
+  static void exitCritical();
+  
   // Internal functions
   static void handleDisconnect();
   static bool waitForTimeSync(uint32_t timeoutMs);
+  static bool isTimeElapsed(unsigned long startTime, unsigned long interval);
 };
 
 #endif // WIFI_MANAGER_H
