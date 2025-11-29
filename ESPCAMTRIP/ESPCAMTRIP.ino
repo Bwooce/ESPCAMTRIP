@@ -1,9 +1,36 @@
 /*
  * ESP32-S3-CAM Main Application
  * Combines photo capture with S3 upload and NTRIP RTK corrections
- * 
+ *
  * This is the main application file that coordinates all subsystems
  */
+
+// ============================================================================
+// COMPILE-TIME CONFIGURATION FLAGS
+// ============================================================================
+
+// RTCM Output Mode: Choose ONE of the following output formats
+//
+// RTCM_OUTPUT_MAVLINK (default)
+//   - Wraps RTCM3 messages in MAVLink GPS_RTCM_DATA packets
+//   - Use for: ArduPilot, PX4, or other MAVLink-based flight controllers
+//   - The receiver must understand MAVLink protocol
+//
+// RTCM_OUTPUT_RAW
+//   - Sends raw RTCM3 binary data directly to UART
+//   - Use for: Direct connection to u-blox ZED-F9P, NEO-M8P, or similar
+//   - Wire: ESP32 TX (GPIO6) -> GPS RX, ESP32 RX (GPIO7) <- GPS TX (optional)
+//   - Default baud: 115200 (configure GPS receiver to match, or change below)
+//
+#define RTCM_OUTPUT_MAVLINK  // Default: MAVLink wrapped output
+// #define RTCM_OUTPUT_RAW   // Uncomment for direct GPS receiver connection
+
+// Raw RTCM baud rate (only used when RTCM_OUTPUT_RAW is defined)
+// ZED-F9P defaults to 38400 on UART1/UART2 - change to match your receiver
+// or configure your receiver to 115200 via u-center
+#define RTCM_RAW_BAUD_RATE 115200
+
+// ============================================================================
 
 #include <Arduino.h>
 #include <WiFi.h>

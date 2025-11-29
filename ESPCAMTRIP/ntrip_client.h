@@ -1,6 +1,12 @@
 #ifndef NTRIP_CLIENT_H
 #define NTRIP_CLIENT_H
 
+// Include compile-time flags from main sketch
+// These are defined in ESPCAMTRIP.ino:
+//   RTCM_OUTPUT_MAVLINK - Wrap RTCM in MAVLink (for flight controllers)
+//   RTCM_OUTPUT_RAW     - Raw RTCM output (for direct GPS receiver connection)
+//   RTCM_RAW_BAUD_RATE  - Baud rate for raw output mode
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -80,9 +86,10 @@ private:
   static void sendGgaToNtrip();
   static String createAuthHeader();
   
-  // MAVLink functions
+  // Output functions
   static void sendMavLinkHeartbeat();
   static void sendMavLinkRTCM(uint8_t* msg, uint16_t msglen);
+  static void sendRawRTCM(uint8_t* msg, uint16_t msglen);
   
   // State variables
   static HardwareSerial mavlinkSerial;

@@ -3,7 +3,21 @@
 #include "system_state.h"
 #include <base64.h>
 #include <esp_task_wdt.h>
+
+// Only include MAVLink if using MAVLink output mode
+#ifdef RTCM_OUTPUT_MAVLINK
 #include <MAVLink.h>
+#endif
+
+// Default to MAVLink mode if neither is defined
+#if !defined(RTCM_OUTPUT_MAVLINK) && !defined(RTCM_OUTPUT_RAW)
+#define RTCM_OUTPUT_MAVLINK
+#endif
+
+// Default raw baud rate if not specified
+#ifndef RTCM_RAW_BAUD_RATE
+#define RTCM_RAW_BAUD_RATE 115200
+#endif
 
 // Static member definitions
 HardwareSerial NtripClient::mavlinkSerial(2);
@@ -81,9 +95,15 @@ const char* rootCACertificate =
 
 bool NtripClient::init() {
   Serial.println("Initializing NTRIP client...");
-  
+
   // Initialize UART for RTCM output
+#ifdef RTCM_OUTPUT_RAW
+  Serial.printf("RTCM output mode: RAW (direct to GPS receiver) at %d baud\n", RTCM_RAW_BAUD_RATE);
+  mavlinkSerial.begin(RTCM_RAW_BAUD_RATE, SERIAL_8N1, Config::pins.RTCM_UART_RX, Config::pins.RTCM_UART_TX);
+#else
+  Serial.println("RTCM output mode: MAVLink wrapped");
   mavlinkSerial.begin(115200, SERIAL_8N1, Config::pins.RTCM_UART_RX, Config::pins.RTCM_UART_TX);
+#endif
   
   // Reset statistics
   memset(&stats, 0, sizeof(stats));
@@ -272,8 +292,12 @@ void NtripClient::processRtcmData(const uint8_t* buffer, size_t size) {
               msgStats.addMessage(messageType);
               
               if (shouldRelayMessage(messageType)) {
+#ifdef RTCM_OUTPUT_RAW
+                sendRawRTCM(localBuffer, localBufferSize);
+#else
                 sendMavLinkRTCM(localBuffer, localBufferSize);
-                
+#endif
+
                 enterCritical();
                 stats.messagesValidated++;
                 stats.messagesForwarded++;
@@ -369,27 +393,34 @@ String NtripClient::createAuthHeader() {
   return "Authorization: Basic " + base64::encode(credentials);
 }
 
+// Raw RTCM output - sends RTCM3 binary directly to UART
+// Use this for direct connection to u-blox ZED-F9P, NEO-M8P, etc.
+void NtripClient::sendRawRTCM(uint8_t* msg, uint16_t msglen) {
+  mavlinkSerial.write(msg, msglen);
+}
+
+#ifdef RTCM_OUTPUT_MAVLINK
 void NtripClient::sendMavLinkHeartbeat() {
   static uint32_t lastSent = 0;
   if (millis() - lastSent < 1000) return;
-  
+
   mavlink_message_t msg;
   uint8_t buf[MAVLINK_MAX_PACKET_LEN];
-  
+
   mavlink_msg_heartbeat_pack(
-    MAVLINK_SYSTEM_ID, 
-    MAVLINK_COMPONENT_ID, 
-    &msg, 
-    MAV_TYPE_ONBOARD_CONTROLLER, 
-    MAV_AUTOPILOT_INVALID, 
-    MAV_MODE_FLAG_MANUAL_INPUT_ENABLED, 
-    0, 
+    MAVLINK_SYSTEM_ID,
+    MAVLINK_COMPONENT_ID,
+    &msg,
+    MAV_TYPE_ONBOARD_CONTROLLER,
+    MAV_AUTOPILOT_INVALID,
+    MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
+    0,
     MAV_STATE_STANDBY
   );
-  
+
   uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
   mavlinkSerial.write(buf, len);
-  
+
   lastSent = millis();
 }
 
@@ -397,13 +428,13 @@ void NtripClient::sendMavLinkRTCM(uint8_t* msg, uint16_t msglen) {
   static uint8_t sequenceId = 0;
   mavlink_message_t mavmsg;
   uint8_t rtcmbuf[MAVLINK_MAX_PACKET_LEN];
-  
+
   sequenceId++;
-  
+
   if (msglen > (4 * MAVLINK_MSG_GPS_RTCM_DATA_FIELD_DATA_LEN)) {
     return; // Too large for MAVLink1
   }
-  
+
   if (msglen < MAVLINK_MSG_GPS_RTCM_DATA_FIELD_DATA_LEN) {
     // Single fragment
     mavlink_msg_gps_rtcm_data_pack(
@@ -414,21 +445,21 @@ void NtripClient::sendMavLinkRTCM(uint8_t* msg, uint16_t msglen) {
       msglen,
       msg
     );
-    
+
     uint16_t mavlen = mavlink_msg_to_send_buffer(rtcmbuf, &mavmsg);
     mavlinkSerial.write(rtcmbuf, mavlen);
   } else {
     // Multiple fragments
     uint8_t fragmentId = 0;
     int start = 0;
-    
+
     while (start < msglen) {
       int l = std::min((int)(msglen - start), (int)MAVLINK_MSG_GPS_RTCM_DATA_FIELD_DATA_LEN);
-      
+
       uint8_t flags = 1;                  // LSB set indicates fragmented
       flags |= fragmentId++ << 1;         // Fragment id
       flags |= (sequenceId & 0x1F) << 3;  // Sequence id
-      
+
       mavlink_msg_gps_rtcm_data_pack(
         MAVLINK_SYSTEM_ID,
         MAVLINK_COMPONENT_ID,
@@ -437,14 +468,22 @@ void NtripClient::sendMavLinkRTCM(uint8_t* msg, uint16_t msglen) {
         l,
         msg + start
       );
-      
+
       uint16_t mavlen = mavlink_msg_to_send_buffer(rtcmbuf, &mavmsg);
       mavlinkSerial.write(rtcmbuf, mavlen);
-      
+
       start += l;
     }
   }
 }
+#else
+// Stub functions when MAVLink is not used
+void NtripClient::sendMavLinkHeartbeat() {}
+void NtripClient::sendMavLinkRTCM(uint8_t* msg, uint16_t msglen) {
+  (void)msg;
+  (void)msglen;
+}
+#endif // RTCM_OUTPUT_MAVLINK
 
 const char* NtripClient::getRtcmMessageDescription(int messageType) {
   switch (messageType) {
