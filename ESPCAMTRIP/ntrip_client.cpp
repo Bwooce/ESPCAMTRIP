@@ -325,27 +325,42 @@ void NtripClient::processRtcmData(const uint8_t* buffer, size_t size) {
 bool NtripClient::connectToNtrip() {
   Serial.println("Connecting to NTRIP caster...");
   stats.connectionAttempts++;
-  
-  WiFiClient* client = Config::ntrip.use_ssl ? 
-                      (WiFiClient*)&secureClient : 
+
+  #ifdef NTRIP_ATLAS_ENABLED
+  // Primary: Use NTRIP Atlas intelligent service discovery
+  // Location from GGA message in config: Sydney, Australia (-33.7986, 151.1722)
+  if (Config::ntrip.server.isEmpty() || stats.connectionAttempts == 1) {
+    Serial.println("Using NTRIP Atlas for intelligent service discovery...");
+    if (tryAtlasDiscovery(-33.7986, 151.1722)) {
+      Serial.println("Atlas found optimal service, attempting connection...");
+      // Continue with discovered service below
+    } else {
+      Serial.println("Atlas discovery failed, using fallback config if available");
+      // Fall through to hardcoded config if Atlas fails
+    }
+  }
+  #endif
+
+  WiFiClient* client = Config::ntrip.use_ssl ?
+                      (WiFiClient*)&secureClient :
                       (WiFiClient*)&standardClient;
-  
+
   if (!client->connect(Config::ntrip.server.c_str(), Config::ntrip.port)) {
     Serial.println("Connection to NTRIP caster failed");
     return false;
   }
-  
+
   client->setTimeout(15000);
-  
+
   // Send HTTP request
   String request = "GET /" + String(Config::ntrip.mountpoint) + " HTTP/1.1\r\n";
   request += "Host: " + String(Config::ntrip.server) + "\r\n";
   request += "User-Agent: NTRIP ESP32Client/2.0\r\n";
   request += createAuthHeader() + "\r\n";
   request += "Connection: keep-alive\r\n\r\n";
-  
+
   client->print(request);
-  
+
   // Wait for response
   unsigned long timeout = millis();
   while (client->available() == 0) {
@@ -356,11 +371,11 @@ bool NtripClient::connectToNtrip() {
     }
     delay(100);
   }
-  
+
   // Check response
   String responseLine = client->readStringUntil('\n');
   Serial.println("Response: " + responseLine);
-  
+
   if (responseLine.indexOf("200 OK") > 0 || responseLine.indexOf("ICY 200 OK") > 0) {
     // Skip headers
     while (client->available()) {
@@ -376,16 +391,6 @@ bool NtripClient::connectToNtrip() {
 
   Serial.println("Invalid response from NTRIP caster");
   client->stop();
-
-  #ifdef NTRIP_ATLAS_ENABLED
-  // Fallback: Try NTRIP Atlas discovery if hardcoded config failed
-  // Location from GGA message in config: Sydney, Australia (-33.7986, 151.1722)
-  if (tryAtlasDiscovery(-33.7986, 151.1722)) {
-    Serial.println("Retrying connection with Atlas-discovered service...");
-    return connectToNtrip(); // Retry with new config
-  }
-  #endif
-
   return false;
 }
 

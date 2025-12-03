@@ -4,24 +4,25 @@ This library adds automatic NTRIP service discovery to your ESPCAMTRIP project.
 
 ## What It Does
 
-NTRIP Atlas provides automatic fallback when your hardcoded NTRIP service fails:
+NTRIP Atlas provides intelligent automatic NTRIP service selection:
 
-1. **Primary**: Uses your configured NTRIP service (e.g., Geoscience Australia)
-2. **Fallback**: If primary fails, automatically discovers the best nearby service from 122 verified global CORS networks
-3. **Seamless**: No interruption to your RTK corrections
+1. **Primary**: Automatically discovers the best nearby service from 122 verified global CORS networks
+2. **Intelligent**: Ranks services by distance, quality, and availability
+3. **Fallback**: Uses hardcoded config only if Atlas discovery fails
+4. **Seamless**: Always gets you the optimal RTK service for your location
 
 ## How It Works
 
-When enabled (`#define NTRIP_ATLAS_ENABLED`), if your hardcoded NTRIP connection fails, the system will:
+When enabled (`#define NTRIP_ATLAS_ENABLED`), the system will:
 
 ```
-[Primary connection fails]
-→ NTRIP Atlas discovery activated
+[Boot up]
+→ NTRIP Atlas discovery activated automatically
 → Scans 122 global services by distance and quality
-→ Selects best available service (government > commercial > community)
+→ Selects optimal available service (government > commercial > community)
 → Updates configuration automatically
-→ Retries connection with new service
-→ RTK corrections resume
+→ Connects to best service immediately
+→ RTK corrections start with optimal service
 ```
 
 ## Global Coverage
