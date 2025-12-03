@@ -4,6 +4,11 @@
 #include <base64.h>
 #include <esp_task_wdt.h>
 
+// NTRIP Atlas integration
+#ifdef NTRIP_ATLAS_ENABLED
+#include "libraries/NTRIP_Atlas/NTRIP_Atlas.h"
+#endif
+
 // Only include MAVLink if using MAVLink output mode
 #ifdef RTCM_OUTPUT_MAVLINK
 #include <MAVLink.h>
@@ -362,15 +367,26 @@ bool NtripClient::connectToNtrip() {
       String line = client->readStringUntil('\n');
       if (line == "\r") break;
     }
-    
+
     stats.connected = true;
     reconnectCount = 0;
     Serial.println("Connected to NTRIP caster successfully");
     return true;
   }
-  
+
   Serial.println("Invalid response from NTRIP caster");
   client->stop();
+
+  #ifdef NTRIP_ATLAS_ENABLED
+  // Fallback: Try NTRIP Atlas discovery if hardcoded config failed
+  // Default location: Sydney, Australia (-33.8688, 151.2093)
+  // Users should modify these coordinates for their location
+  if (tryAtlasDiscovery(-33.8688, 151.2093)) {
+    Serial.println("Retrying connection with Atlas-discovered service...");
+    return connectToNtrip(); // Retry with new config
+  }
+  #endif
+
   return false;
 }
 
@@ -392,6 +408,39 @@ String NtripClient::createAuthHeader() {
   String credentials = String(Config::ntrip.username) + ":" + String(Config::ntrip.password);
   return "Authorization: Basic " + base64::encode(credentials);
 }
+
+#ifdef NTRIP_ATLAS_ENABLED
+bool NtripClient::tryAtlasDiscovery(double latitude, double longitude) {
+  Serial.println("Trying NTRIP Atlas service discovery...");
+
+  // Initialize NTRIP Atlas for ESP32
+  if (!ntrip_atlas_init_esp32()) {
+    Serial.println("Failed to initialize NTRIP Atlas");
+    return false;
+  }
+
+  // Find best service for current location
+  ntrip_best_service_t service;
+  if (ntrip_atlas_find_best(&service, latitude, longitude) == NTRIP_ATLAS_SUCCESS) {
+    // Update config with discovered service
+    Serial.printf("Atlas discovered: %s:%d/%s (%.1fkm away)\n",
+                  service.server, service.port, service.mountpoint, service.distance_km);
+
+    Config::ntrip.server = service.server;
+    Config::ntrip.port = service.port;
+    Config::ntrip.mountpoint = service.mountpoint;
+    Config::ntrip.use_ssl = false; // Most NTRIP services use plain HTTP
+
+    // Note: User will need to configure credentials manually
+    // Could be enhanced to check for free services first
+    Serial.println("Atlas discovery successful! Configure credentials if needed.");
+    return true;
+  }
+
+  Serial.println("No suitable NTRIP service found via Atlas");
+  return false;
+}
+#endif
 
 // Raw RTCM output - sends RTCM3 binary directly to UART
 // Use this for direct connection to u-blox ZED-F9P, NEO-M8P, etc.

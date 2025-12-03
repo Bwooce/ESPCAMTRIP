@@ -15,6 +15,11 @@
 #include <freertos/portmacro.h>
 #include <HardwareSerial.h>
 
+// NTRIP Atlas integration for automatic service discovery
+#ifdef NTRIP_ATLAS_ENABLED
+#include "libraries/NTRIP_Atlas/NTRIP_Atlas.h"
+#endif
+
 // RTCM Message definitions
 #define RTCM_PREAMBLE 0xD3
 #define RTCM_MIN_LENGTH 6
@@ -66,6 +71,11 @@ public:
   static Statistics getStatistics();
   static void printStatistics();
   static const char* getRtcmMessageDescription(int messageType);
+
+  // NTRIP Atlas automatic service discovery
+  #ifdef NTRIP_ATLAS_ENABLED
+  static bool tryAtlasDiscovery(double latitude, double longitude);
+  #endif
   
   // Inter-task communication
   static void notifyActivity();
