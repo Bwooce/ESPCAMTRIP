@@ -379,9 +379,8 @@ bool NtripClient::connectToNtrip() {
 
   #ifdef NTRIP_ATLAS_ENABLED
   // Fallback: Try NTRIP Atlas discovery if hardcoded config failed
-  // Default location: Sydney, Australia (-33.8688, 151.2093)
-  // Users should modify these coordinates for their location
-  if (tryAtlasDiscovery(-33.8688, 151.2093)) {
+  // Location from GGA message in config: Sydney, Australia (-33.7986, 151.1722)
+  if (tryAtlasDiscovery(-33.7986, 151.1722)) {
     Serial.println("Retrying connection with Atlas-discovered service...");
     return connectToNtrip(); // Retry with new config
   }
