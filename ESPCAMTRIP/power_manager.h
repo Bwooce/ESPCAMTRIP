@@ -17,7 +17,6 @@ public:
   
   // Peripheral management
   static void disableUnusedPeripherals();
-  static void disableBluetooth();
   static void configureUnusedPins();
   
   // Wake configuration

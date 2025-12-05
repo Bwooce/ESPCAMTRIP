@@ -4,12 +4,17 @@
 #include <base64.h>
 #include <esp_task_wdt.h>
 
-// Only include MAVLink if using MAVLink output mode
+// NTRIP Atlas integration
+#ifdef NTRIP_ATLAS_ENABLED
+#include "libraries/NTRIP_Atlas/NTRIP_Atlas.h"
+#endif
+
+// MAVLink support - using official library for protocol compliance
 #ifdef RTCM_OUTPUT_MAVLINK
 #include <MAVLink.h>
 #endif
 
-// Default to MAVLink mode if neither is defined
+// Default to MAVLink mode if neither is defined (library now available)
 #if !defined(RTCM_OUTPUT_MAVLINK) && !defined(RTCM_OUTPUT_RAW)
 #define RTCM_OUTPUT_MAVLINK
 #endif
@@ -95,6 +100,12 @@ const char* rootCACertificate =
 
 bool NtripClient::init() {
   Serial.println("Initializing NTRIP client...");
+
+  // Initialize GPS Position Manager
+  if (!GPSPositionManager::init()) {
+    Serial.println("Failed to initialize GPS Position Manager");
+    return false;
+  }
 
   // Initialize UART for RTCM output
 #ifdef RTCM_OUTPUT_RAW
@@ -320,27 +331,44 @@ void NtripClient::processRtcmData(const uint8_t* buffer, size_t size) {
 bool NtripClient::connectToNtrip() {
   Serial.println("Connecting to NTRIP caster...");
   stats.connectionAttempts++;
-  
-  WiFiClient* client = Config::ntrip.use_ssl ? 
-                      (WiFiClient*)&secureClient : 
+
+  #ifdef NTRIP_ATLAS_ENABLED
+  // Primary: Use NTRIP Atlas intelligent service discovery
+  if (Config::ntrip.server.isEmpty() || stats.connectionAttempts == 1) {
+    Serial.println("Using NTRIP Atlas for intelligent service discovery...");
+
+    // Try discovery with live GPS position first, fallback to static coordinates
+    if (tryAtlasDiscoveryWithLivePosition()) {
+      Serial.println("Atlas found optimal service using live GPS position, attempting connection...");
+    } else if (tryAtlasDiscovery(-33.7986, 151.1722)) {
+      Serial.println("Atlas found optimal service using static coordinates, attempting connection...");
+    } else {
+      Serial.println("Atlas discovery failed, using fallback config if available");
+      // Fall through to hardcoded config if Atlas fails
+    }
+  }
+  #endif
+
+  WiFiClient* client = Config::ntrip.use_ssl ?
+                      (WiFiClient*)&secureClient :
                       (WiFiClient*)&standardClient;
-  
+
   if (!client->connect(Config::ntrip.server.c_str(), Config::ntrip.port)) {
     Serial.println("Connection to NTRIP caster failed");
     return false;
   }
-  
+
   client->setTimeout(15000);
-  
+
   // Send HTTP request
   String request = "GET /" + String(Config::ntrip.mountpoint) + " HTTP/1.1\r\n";
   request += "Host: " + String(Config::ntrip.server) + "\r\n";
   request += "User-Agent: NTRIP ESP32Client/2.0\r\n";
   request += createAuthHeader() + "\r\n";
   request += "Connection: keep-alive\r\n\r\n";
-  
+
   client->print(request);
-  
+
   // Wait for response
   unsigned long timeout = millis();
   while (client->available() == 0) {
@@ -351,24 +379,24 @@ bool NtripClient::connectToNtrip() {
     }
     delay(100);
   }
-  
+
   // Check response
   String responseLine = client->readStringUntil('\n');
   Serial.println("Response: " + responseLine);
-  
+
   if (responseLine.indexOf("200 OK") > 0 || responseLine.indexOf("ICY 200 OK") > 0) {
     // Skip headers
     while (client->available()) {
       String line = client->readStringUntil('\n');
       if (line == "\r") break;
     }
-    
+
     stats.connected = true;
     reconnectCount = 0;
     Serial.println("Connected to NTRIP caster successfully");
     return true;
   }
-  
+
   Serial.println("Invalid response from NTRIP caster");
   client->stop();
   return false;
@@ -376,14 +404,23 @@ bool NtripClient::connectToNtrip() {
 
 void NtripClient::sendGgaToNtrip() {
   if (millis() - lastGgaTime > Config::ntrip.GGA_INTERVAL) {
-    WiFiClient* client = Config::ntrip.use_ssl ? 
-                        (WiFiClient*)&secureClient : 
+    WiFiClient* client = Config::ntrip.use_ssl ?
+                        (WiFiClient*)&secureClient :
                         (WiFiClient*)&standardClient;
-    
+
     if (client->connected()) {
-      client->println(Config::ntrip.gga_message);
-      client->clear(); // flush -> clear
+      // Generate dynamic GGA message based on live GPS position
+      String gga = GPSPositionManager::generateGGAMessage();
+      client->println(gga);
+      client->clear();
       lastGgaTime = millis();
+
+      // Debug output every 10 GGA sends (reduce spam)
+      static int ggaCount = 0;
+      if (++ggaCount % 10 == 0) {
+        GPSQuality qual = GPSPositionManager::getPositionQuality();
+        Serial.printf("GGA sent: %s (Quality: %s)\n", gga.c_str(), qual.status.c_str());
+      }
     }
   }
 }
@@ -391,6 +428,118 @@ void NtripClient::sendGgaToNtrip() {
 String NtripClient::createAuthHeader() {
   String credentials = String(Config::ntrip.username) + ":" + String(Config::ntrip.password);
   return "Authorization: Basic " + base64::encode(credentials);
+}
+
+#ifdef NTRIP_ATLAS_ENABLED
+bool NtripClient::tryAtlasDiscovery(double latitude, double longitude) {
+  Serial.println("Trying NTRIP Atlas service discovery...");
+
+  // Initialize NTRIP Atlas for ESP32
+  if (!ntrip_atlas_init_esp32()) {
+    Serial.println("Failed to initialize NTRIP Atlas");
+    return false;
+  }
+
+  // Find best service for current location
+  ntrip_best_service_t service;
+  if (ntrip_atlas_find_best(&service, latitude, longitude) == NTRIP_ATLAS_SUCCESS) {
+    // Update config with discovered service
+    Serial.printf("Atlas discovered: %s:%d/%s (%.1fkm away)\n",
+                  service.server, service.port, service.mountpoint, service.distance_km);
+
+    Config::ntrip.server = service.server;
+    Config::ntrip.port = service.port;
+    Config::ntrip.mountpoint = service.mountpoint;
+    Config::ntrip.use_ssl = false; // Most NTRIP services use plain HTTP
+
+    // Note: User will need to configure credentials manually
+    // Could be enhanced to check for free services first
+    Serial.println("Atlas discovery successful! Configure credentials if needed.");
+    return true;
+  }
+
+  Serial.println("No suitable NTRIP service found via Atlas");
+  return false;
+}
+
+bool NtripClient::tryAtlasDiscoveryWithLivePosition() {
+  if (!GPSPositionManager::hasValidPosition()) {
+    Serial.println("No live GPS position available for Atlas discovery");
+    return false;
+  }
+
+  GPSPosition pos = GPSPositionManager::getCurrentPosition();
+  Serial.printf("Using live GPS position: %.6f, %.6f for Atlas discovery\n",
+                pos.latitude, pos.longitude);
+
+  return tryAtlasDiscovery(pos.latitude, pos.longitude);
+}
+#endif
+
+void NtripClient::processIncomingGPSData() {
+  // Process incoming data from GPS receiver or flight controller
+  if (mavlinkSerial.available()) {
+    while (mavlinkSerial.available()) {
+      char c = mavlinkSerial.read();
+
+      #ifdef RTCM_OUTPUT_RAW
+      // In raw mode, parse incoming NMEA from GPS receiver
+      static String nmeaBuffer = "";
+      if (c == '\n') {
+        if (nmeaBuffer.length() > 0) {
+          GPSPositionManager::updateFromNMEA(nmeaBuffer);
+          nmeaBuffer = "";
+        }
+      } else if (c != '\r') {
+        nmeaBuffer += c;
+        if (nmeaBuffer.length() > 200) {
+          nmeaBuffer = ""; // Prevent buffer overflow
+        }
+      }
+      #else
+      // In MAVLink mode, parse incoming MAVLink messages from flight controller
+      static uint8_t mavlinkBuffer[256];
+      static size_t bufferPos = 0;
+
+      mavlinkBuffer[bufferPos++] = c;
+      if (bufferPos >= sizeof(mavlinkBuffer)) {
+        bufferPos = 0; // Reset on overflow
+      }
+
+      // Simple MAVLink processing - look for complete messages
+      if (bufferPos >= 8) { // Minimum MAVLink message size
+        GPSPositionManager::updateFromMAVLink(mavlinkBuffer, bufferPos);
+        bufferPos = 0; // Reset buffer after processing
+      }
+      #endif
+    }
+  }
+}
+
+bool NtripClient::updatePositionFromGPS() {
+  processIncomingGPSData();
+  return GPSPositionManager::hasValidPosition();
+}
+
+void NtripClient::printGPSStatus() {
+  GPSPosition pos = GPSPositionManager::getCurrentPosition();
+  GPSQuality qual = GPSPositionManager::getPositionQuality();
+
+  Serial.println("\n=== GPS Status ===");
+  if (pos.valid) {
+    Serial.printf("Position: %.6f, %.6f @ %.1fm\n",
+                  pos.latitude, pos.longitude, pos.altitude);
+    Serial.printf("Fix Type: %d, Satellites: %d, HDOP: %.1f\n",
+                  pos.fixType, pos.satellites, pos.hdop);
+    Serial.printf("Quality: %s (±%.2fm)\n", qual.status.c_str(), qual.accuracy);
+    Serial.printf("Age: %lums\n", millis() - pos.timestamp);
+  } else {
+    Serial.println("No valid GPS position");
+  }
+  Serial.printf("Messages: %lu total, %lu valid\n",
+                GPSPositionManager::getTotalMessages(),
+                GPSPositionManager::getValidMessages());
+  Serial.println("==================");
 }
 
 // Raw RTCM output - sends RTCM3 binary directly to UART
@@ -621,11 +770,14 @@ void ntripClientTask(void* parameter) {
       }
     }
     
+    // Process incoming GPS data for live positioning
+    NtripClient::processIncomingGPSData();
+
     // Handle connected state
     if (client) {
       // Send GGA periodically
       NtripClient::sendGgaToNtrip();
-      
+
       // Check for data
       if (client->available()) {
         uint8_t buffer[1024];
@@ -675,3 +827,4 @@ void NtripClient::enterCritical() {
 void NtripClient::exitCritical() {
   portEXIT_CRITICAL(&ntripMux);
 }
+

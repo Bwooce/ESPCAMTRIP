@@ -25,6 +25,9 @@
 #define RTCM_OUTPUT_MAVLINK  // Default: MAVLink wrapped output
 // #define RTCM_OUTPUT_RAW   // Uncomment for direct GPS receiver connection
 
+// NTRIP Atlas automatic service discovery
+#define NTRIP_ATLAS_ENABLED  // Enable automatic fallback service discovery
+
 // Raw RTCM baud rate (only used when RTCM_OUTPUT_RAW is defined)
 // ZED-F9P defaults to 38400 on UART1/UART2 - change to match your receiver
 // or configure your receiver to 115200 via u-center
