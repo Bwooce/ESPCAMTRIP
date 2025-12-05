@@ -20,6 +20,9 @@
 #include "libraries/NTRIP_Atlas/NTRIP_Atlas.h"
 #endif
 
+// GPS Position Manager for live positioning
+#include "gps_position_manager.h"
+
 // RTCM Message definitions
 #define RTCM_PREAMBLE 0xD3
 #define RTCM_MIN_LENGTH 6
@@ -75,8 +78,14 @@ public:
   // NTRIP Atlas automatic service discovery
   #ifdef NTRIP_ATLAS_ENABLED
   static bool tryAtlasDiscovery(double latitude, double longitude);
+  static bool tryAtlasDiscoveryWithLivePosition();
   #endif
-  
+
+  // Live GPS position processing
+  static void processIncomingGPSData();
+  static bool updatePositionFromGPS();
+  static void printGPSStatus();
+
   // Inter-task communication
   static void notifyActivity();
   static bool isIdle();

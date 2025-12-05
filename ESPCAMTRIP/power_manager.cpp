@@ -5,8 +5,7 @@
 #include <esp_pm.h>
 #include <esp_sleep.h>
 #include <driver/gpio.h>
-#include <esp_bt.h>
-#include <esp_bt_main.h>
+// Bluetooth headers removed - not needed since BT is disabled by default
 #include <esp_wifi.h>
 #include <esp_err.h>
 #include <driver/adc.h>
@@ -103,7 +102,7 @@ void PowerManager::setCpuFrequency(uint32_t freqMhz) {
   
   // Validate frequency
   if (freqMhz != 240 && freqMhz != 160 && freqMhz != 80) {
-    Serial.printf("Invalid CPU frequency: %u MHz\n", freqMhz);
+    Serial.printf("Invalid CPU frequency: %lu MHz\n", (unsigned long)freqMhz);
     return;
   }
   
@@ -111,14 +110,13 @@ void PowerManager::setCpuFrequency(uint32_t freqMhz) {
   setCpuFrequencyMhz(freqMhz);
   currentCpuFreq = freqMhz;
   
-  Serial.printf("CPU frequency set to %u MHz\n", freqMhz);
+  Serial.printf("CPU frequency set to %lu MHz\n", (unsigned long)freqMhz);
 }
 
 void PowerManager::disableUnusedPeripherals() {
   Serial.println("Disabling unused peripherals...");
   
-  // Disable Bluetooth
-  disableBluetooth();
+  // Bluetooth is not enabled by default in ESP32 Arduino - no need to disable
   
   // Configure unused GPIO pins
   configureUnusedPins();
@@ -132,32 +130,7 @@ void PowerManager::disableUnusedPeripherals() {
   Serial.println("Peripherals configured for low power");
 }
 
-void PowerManager::disableBluetooth() {
-  // Disable Bluetooth controller with error checking
-  esp_err_t err;
-  
-  err = esp_bluedroid_disable();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to disable Bluedroid: %s\n", esp_err_to_name(err));
-  }
-  
-  err = esp_bluedroid_deinit();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to deinit Bluedroid: %s\n", esp_err_to_name(err));
-  }
-  
-  err = esp_bt_controller_disable();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to disable BT controller: %s\n", esp_err_to_name(err));
-  }
-  
-  err = esp_bt_controller_deinit();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to deinit BT controller: %s\n", esp_err_to_name(err));
-  } else {
-    Serial.println("Bluetooth disabled successfully");
-  }
-}
+// Bluetooth function removed - not needed since BT is disabled by default
 
 void PowerManager::configureUnusedPins() {
   // Configure unused pins as inputs with pull-down to prevent floating
@@ -194,7 +167,7 @@ void PowerManager::configureWakeupSources() {
   
   // Configure EXT1 wake-up (multiple pins)
   uint64_t pin_mask = (1ULL << capturePin) | (1ULL << uploadPin);
-  esp_sleep_enable_ext1_wakeup(pin_mask, ESP_EXT1_WAKEUP_ANY_LOW);
+  esp_sleep_enable_ext1_wakeup(pin_mask, ESP_EXT1_WAKEUP_ALL_LOW);
   
   // Configure timer wake-up (will be set when entering sleep)
   // esp_sleep_enable_timer_wakeup() - called when needed
