@@ -40,50 +40,89 @@ namespace Config {
     const uint32_t GGA_INTERVAL = 10000; // 10 seconds
   };
   
-  // Pin Configuration
+  // Pin Configuration (board-specific auto-detection)
   struct PinConfig {
-    const uint8_t CAPTURE_TRIGGER_PIN = 2; // Was 1, changed to GPIO2 (XIAO D0/IO2)
-    const uint8_t UPLOAD_TRIGGER_PIN = 4;  // Was 2, changed to GPIO4 (XIAO D2/IO4)
-    const uint8_t LED_STATUS_PIN = 21;     // Was 33, changed to GPIO21 (built-in LED)
-    const uint8_t RTCM_UART_TX = 6;        //
-    const uint8_t RTCM_UART_RX = 7;       // 
+    #if defined(ARDUINO_XIAO_ESP32S3)
+      // XIAO ESP32S3 pin configuration
+      const uint8_t CAPTURE_TRIGGER_PIN = 2; // GPIO2 (XIAO D0/IO2) - safe pin
+      const uint8_t UPLOAD_TRIGGER_PIN = 4;  // GPIO4 (XIAO D2/IO4) - safe pin
+      const uint8_t LED_STATUS_PIN = 21;     // GPIO21 (built-in LED)
+      const uint8_t RTCM_UART_TX = 6;       // GPIO6 (XIAO D4/IO6) - safe pin
+      const uint8_t RTCM_UART_RX = 7;       // GPIO7 (XIAO D5/IO7) - safe pin
+    #elif defined(ARDUINO_ESP32S3_CAM_LCD)
+      // ESP32-S3-CAM-LCD pin configuration
+      const uint8_t CAPTURE_TRIGGER_PIN = 1; // GPIO1 - safe pin on ESP32-S3-CAM
+      const uint8_t UPLOAD_TRIGGER_PIN = 2;  // GPIO2 - safe pin on ESP32-S3-CAM
+      const uint8_t LED_STATUS_PIN = 33;     // GPIO33 - LED pin on ESP32-S3-CAM
+      const uint8_t RTCM_UART_TX = 6;       // GPIO6 - UART TX
+      const uint8_t RTCM_UART_RX = 7;       // GPIO7 - UART RX
+    #else
+      // Generic ESP32-S3 pin configuration (fallback)
+      const uint8_t CAPTURE_TRIGGER_PIN = 1; // GPIO1 - safe pin
+      const uint8_t UPLOAD_TRIGGER_PIN = 2;  // GPIO2 - safe pin
+      const uint8_t LED_STATUS_PIN = 8;      // GPIO8 - generic LED pin
+      const uint8_t RTCM_UART_TX = 6;       // GPIO6 - UART TX
+      const uint8_t RTCM_UART_RX = 7;       // GPIO7 - UART RX
+    #endif
   };
   
-  // Camera Pin Configuration
+  // Camera Pin Configuration (board-specific auto-detection)
   struct CameraPins {
-    const int8_t PWDN_GPIO_NUM = -1;
-    const int8_t RESET_GPIO_NUM = -1;
-    const uint8_t XCLK_GPIO_NUM = 10;
-    const uint8_t SIOD_GPIO_NUM = 40; // D(-)=40, D(+)=39 on schematic, but seems this is for I2C. Camera DVP uses other pins.
-                                      // Standard XIAO ESP32S3 Sense Camera pins are:
-                                      // XCLK: 10
-                                      // PCLK: 13
-                                      // VSYNC: 38
-                                      // HREF: 47
-                                      // D0/Y2: 15
-                                      // D1/Y3: 17
-                                      // D2/Y4: 18
-                                      // D3/Y5: 16
-                                      // D4/Y6: 14
-                                      // D5/Y7: 12
-                                      // D6/Y8: 11
-                                      // D7/Y9: 48
-                                      // SIOC: 39 (SCCB Clock)
-                                      // SIOD: 40 (SCCB Data)
-                                      // PWDN: -1 (not connected on XIAO schematic for camera itself)
-                                      // RESET: -1
-    const uint8_t SIOC_GPIO_NUM = 39;
-    const uint8_t Y9_GPIO_NUM = 48;
-    const uint8_t Y8_GPIO_NUM = 11;
-    const uint8_t Y7_GPIO_NUM = 12;
-    const uint8_t Y6_GPIO_NUM = 14;
-    const uint8_t Y5_GPIO_NUM = 16;
-    const uint8_t Y4_GPIO_NUM = 18;
-    const uint8_t Y3_GPIO_NUM = 17;
-    const uint8_t Y2_GPIO_NUM = 15;
-    const uint8_t VSYNC_GPIO_NUM = 38;
-    const uint8_t HREF_GPIO_NUM = 47;
-    const uint8_t PCLK_GPIO_NUM = 13;
+    #if defined(ARDUINO_XIAO_ESP32S3)
+      // XIAO ESP32S3 Sense camera pins (OV2640)
+      const int8_t PWDN_GPIO_NUM = -1;  // Not connected
+      const int8_t RESET_GPIO_NUM = -1; // Not connected
+      const uint8_t XCLK_GPIO_NUM = 10;  // Camera clock
+      const uint8_t SIOD_GPIO_NUM = 40;  // I2C SDA (SCCB Data)
+      const uint8_t SIOC_GPIO_NUM = 39;  // I2C SCL (SCCB Clock)
+      const uint8_t Y9_GPIO_NUM = 48;    // Data line Y9
+      const uint8_t Y8_GPIO_NUM = 11;    // Data line Y8
+      const uint8_t Y7_GPIO_NUM = 12;    // Data line Y7
+      const uint8_t Y6_GPIO_NUM = 14;    // Data line Y6
+      const uint8_t Y5_GPIO_NUM = 16;    // Data line Y5
+      const uint8_t Y4_GPIO_NUM = 18;    // Data line Y4
+      const uint8_t Y3_GPIO_NUM = 17;    // Data line Y3
+      const uint8_t Y2_GPIO_NUM = 15;    // Data line Y2
+      const uint8_t VSYNC_GPIO_NUM = 38; // Vertical sync
+      const uint8_t HREF_GPIO_NUM = 47;  // Horizontal reference
+      const uint8_t PCLK_GPIO_NUM = 13;  // Pixel clock
+    #elif defined(ARDUINO_ESP32S3_CAM_LCD)
+      // ESP32-S3-CAM-LCD camera pins (typically OV2640/OV5640)
+      const int8_t PWDN_GPIO_NUM = 32;   // Power down
+      const int8_t RESET_GPIO_NUM = -1;  // Reset (may vary)
+      const uint8_t XCLK_GPIO_NUM = 0;   // Camera clock
+      const uint8_t SIOD_GPIO_NUM = 26;  // I2C SDA (SCCB Data)
+      const uint8_t SIOC_GPIO_NUM = 27;  // I2C SCL (SCCB Clock)
+      const uint8_t Y9_GPIO_NUM = 35;    // Data line Y9
+      const uint8_t Y8_GPIO_NUM = 34;    // Data line Y8
+      const uint8_t Y7_GPIO_NUM = 39;    // Data line Y7
+      const uint8_t Y6_GPIO_NUM = 36;    // Data line Y6
+      const uint8_t Y5_GPIO_NUM = 21;    // Data line Y5
+      const uint8_t Y4_GPIO_NUM = 19;    // Data line Y4
+      const uint8_t Y3_GPIO_NUM = 18;    // Data line Y3
+      const uint8_t Y2_GPIO_NUM = 5;     // Data line Y2
+      const uint8_t VSYNC_GPIO_NUM = 25; // Vertical sync
+      const uint8_t HREF_GPIO_NUM = 23;  // Horizontal reference
+      const uint8_t PCLK_GPIO_NUM = 22;  // Pixel clock
+    #else
+      // Generic ESP32-S3 camera pins (fallback - AI Thinker style)
+      const int8_t PWDN_GPIO_NUM = 32;   // Power down
+      const int8_t RESET_GPIO_NUM = -1;  // Reset
+      const uint8_t XCLK_GPIO_NUM = 0;   // Camera clock
+      const uint8_t SIOD_GPIO_NUM = 26;  // I2C SDA (SCCB Data)
+      const uint8_t SIOC_GPIO_NUM = 27;  // I2C SCL (SCCB Clock)
+      const uint8_t Y9_GPIO_NUM = 35;    // Data line Y9
+      const uint8_t Y8_GPIO_NUM = 34;    // Data line Y8
+      const uint8_t Y7_GPIO_NUM = 39;    // Data line Y7
+      const uint8_t Y6_GPIO_NUM = 36;    // Data line Y6
+      const uint8_t Y5_GPIO_NUM = 21;    // Data line Y5
+      const uint8_t Y4_GPIO_NUM = 19;    // Data line Y4
+      const uint8_t Y3_GPIO_NUM = 18;    // Data line Y3
+      const uint8_t Y2_GPIO_NUM = 5;     // Data line Y2
+      const uint8_t VSYNC_GPIO_NUM = 25; // Vertical sync
+      const uint8_t HREF_GPIO_NUM = 23;  // Horizontal reference
+      const uint8_t PCLK_GPIO_NUM = 22;  // Pixel clock
+    #endif
   };
   
   // Timing Configuration

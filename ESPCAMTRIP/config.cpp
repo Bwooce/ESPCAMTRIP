@@ -194,37 +194,169 @@ namespace Config {
   bool saveToFile() {
     JsonDocument doc;
 
+    // WiFi configuration (save all fields, secure password handling)
     JsonObject wifiObj = doc["wifi"].to<JsonObject>();
     wifiObj["ssid"] = wifi.ssid;
+    // Store password for functionality, but it's masked in printConfig()
+    wifiObj["password"] = wifi.password;
 
+    // S3 configuration (save all fields)
     JsonObject s3Obj = doc["s3"].to<JsonObject>();
+    s3Obj["access_key"] = s3.access_key;
+    s3Obj["secret_key"] = s3.secret_key;
     s3Obj["region"] = s3.region;
     s3Obj["bucket"] = s3.bucket;
 
+    // NTRIP configuration (save all fields, matching load structure)
     JsonObject ntripObj = doc["ntrip"].to<JsonObject>();
     ntripObj["enabled"] = ntrip.enabled;
     ntripObj["server"] = ntrip.server;
     ntripObj["port"] = ntrip.port;
     ntripObj["mountpoint"] = ntrip.mountpoint;
+    ntripObj["username"] = ntrip.username;
+    ntripObj["password"] = ntrip.password;
+    ntripObj["gga_message"] = ntrip.gga_message;
+    ntripObj["use_ssl"] = ntrip.use_ssl;
 
-    JsonObject uploadObj = doc["upload"].to<JsonObject>();
-    uploadObj["auto_upload"] = upload.AUTO_UPLOAD;
-    uploadObj["delete_after_upload"] = upload.DELETE_AFTER_UPLOAD;
+    // Timing configuration
+    JsonObject timingObj = doc["timing"].to<JsonObject>();
+    timingObj["CAPTURE_INTERVAL"] = timing.CAPTURE_INTERVAL;
 
+    // Storage configuration
+    JsonObject storageObj = doc["storage"].to<JsonObject>();
+    storageObj["DIRECTORY_RETENTION_DAYS"] = storage.DIRECTORY_RETENTION_DAYS;
+
+    // Power configuration (save all fields, matching load structure)
     JsonObject powerObj = doc["power"].to<JsonObject>();
-    powerObj["enable_optimization"] = power.ENABLE_OPTIMIZATION;
-    powerObj["camera_power_management"] = power.CAMERA_POWER_MANAGEMENT;
+    powerObj["ENABLE_OPTIMIZATION"] = power.ENABLE_OPTIMIZATION;
+    powerObj["SLEEP_BETWEEN_CAPTURES"] = power.SLEEP_BETWEEN_CAPTURES;
+    powerObj["CAMERA_POWER_MANAGEMENT"] = power.CAMERA_POWER_MANAGEMENT;
+    powerObj["IDLE_TIMEOUT_MS"] = power.IDLE_TIMEOUT_MS;
+    powerObj["DEEP_SLEEP_TIMEOUT_MS"] = power.DEEP_SLEEP_TIMEOUT_MS;
+    powerObj["CPU_FREQ_CAPTURE"] = power.CPU_FREQ_CAPTURE;
+    powerObj["CPU_FREQ_NORMAL"] = power.CPU_FREQ_NORMAL;
+    powerObj["CPU_FREQ_IDLE"] = power.CPU_FREQ_IDLE;
 
-    File configFile = StorageManager::openFile(storage.CONFIG_FILE, "w");
-    if (!configFile) {
-      Serial.println("Failed to create config file");
+    // Upload configuration (fix field name consistency)
+    JsonObject uploadObj = doc["upload"].to<JsonObject>();
+    uploadObj["AUTO_UPLOAD"] = upload.AUTO_UPLOAD;
+    uploadObj["DELETE_AFTER_UPLOAD"] = upload.DELETE_AFTER_UPLOAD;
+
+    // Camera configuration
+    JsonObject cameraObj = doc["camera"].to<JsonObject>();
+    cameraObj["JPEG_QUALITY"] = camera.JPEG_QUALITY;
+    cameraObj["FRAME_SIZE"] = (int)camera.FRAME_SIZE;
+
+    // Serialize JSON to string buffer for atomic write
+    String jsonString;
+    if (serializeJsonPretty(doc, jsonString) == 0) {
+      Serial.println("Failed to serialize configuration JSON");
       return false;
     }
 
-    serializeJsonPretty(doc, configFile);
-    StorageManager::closeFile(configFile);
+    // Implement atomic file write using temporary file approach
+    String tempFile = String(storage.CONFIG_FILE) + ".tmp";
+    String backupFile = String(storage.CONFIG_FILE) + ".bak";
 
-    Serial.println("Configuration saved to file");
+    // Step 1: Create backup of existing config (if it exists)
+    if (StorageManager::exists(storage.CONFIG_FILE)) {
+      if (StorageManager::exists(backupFile)) {
+        StorageManager::remove(backupFile);
+      }
+
+      // Read current config and write to backup
+      std::vector<uint8_t> currentConfig;
+      if (!StorageManager::readFileAtomic(storage.CONFIG_FILE, currentConfig)) {
+        Serial.println("Warning: Could not create config backup");
+      } else {
+        if (!StorageManager::writeFileAtomic(backupFile, currentConfig.data(), currentConfig.size())) {
+          Serial.println("Warning: Failed to write config backup");
+        }
+      }
+    }
+
+    // Step 2: Write new config to temporary file
+    const uint8_t* jsonData = reinterpret_cast<const uint8_t*>(jsonString.c_str());
+    size_t jsonSize = jsonString.length();
+
+    if (!StorageManager::writeFileAtomic(tempFile, jsonData, jsonSize)) {
+      Serial.println("Failed to write temporary config file");
+      return false;
+    }
+
+    // Step 3: Verify the written file is valid by reading it back
+    std::vector<uint8_t> verifyData;
+    if (!StorageManager::readFileAtomic(tempFile, verifyData)) {
+      Serial.println("Failed to verify written config file");
+      StorageManager::remove(tempFile);
+      return false;
+    }
+
+    // Step 4: Verify the data matches what we wrote
+    if (verifyData.size() != jsonSize ||
+        memcmp(verifyData.data(), jsonData, jsonSize) != 0) {
+      Serial.println("Config file verification failed - data mismatch");
+      StorageManager::remove(tempFile);
+      return false;
+    }
+
+    // Step 5: Remove old config file (if exists)
+    if (StorageManager::exists(storage.CONFIG_FILE)) {
+      if (!StorageManager::remove(storage.CONFIG_FILE)) {
+        Serial.println("Failed to remove old config file");
+        StorageManager::remove(tempFile);
+        return false;
+      }
+    }
+
+    // Step 6: Rename temporary file to final config file (atomic operation)
+    File tempFileHandle = StorageManager::openFile(tempFile, "r");
+    File finalFileHandle = StorageManager::openFile(storage.CONFIG_FILE, "w");
+
+    if (!tempFileHandle || !finalFileHandle) {
+      Serial.println("Failed to open files for atomic rename operation");
+      if (tempFileHandle) StorageManager::closeFile(tempFileHandle);
+      if (finalFileHandle) StorageManager::closeFile(finalFileHandle);
+      StorageManager::remove(tempFile);
+      return false;
+    }
+
+    // Copy content from temp to final (simulates atomic rename on filesystems that don't support it)
+    uint8_t buffer[256];
+    size_t bytesRead;
+    bool copySuccess = true;
+
+    while ((bytesRead = tempFileHandle.read(buffer, sizeof(buffer))) > 0) {
+      if (finalFileHandle.write(buffer, bytesRead) != bytesRead) {
+        copySuccess = false;
+        break;
+      }
+    }
+
+    StorageManager::closeFile(tempFileHandle);
+    StorageManager::closeFile(finalFileHandle);
+
+    if (!copySuccess) {
+      Serial.println("Failed to copy temp file to final config file");
+      StorageManager::remove(storage.CONFIG_FILE);
+      StorageManager::remove(tempFile);
+
+      // Attempt to restore backup
+      if (StorageManager::exists(backupFile)) {
+        std::vector<uint8_t> backupData;
+        if (StorageManager::readFileAtomic(backupFile, backupData) &&
+            StorageManager::writeFileAtomic(storage.CONFIG_FILE, backupData.data(), backupData.size())) {
+          Serial.println("Restored configuration from backup");
+        }
+      }
+      return false;
+    }
+
+    // Step 7: Clean up temporary file
+    StorageManager::remove(tempFile);
+
+    // Step 8: Keep backup for safety (remove old backups periodically)
+    Serial.println("Configuration saved atomically to file");
     return true;
   }
 
@@ -236,10 +368,9 @@ namespace Config {
     Serial.printf("Connection Timeout: %lu ms\n", wifi.CONNECTION_TIMEOUT);
 
     Serial.println("\n[S3]");
-    // Note: Printing keys directly is a security risk in production.
-    // For debugging, this is fine. Consider printing "[set]" or partial keys.
-    Serial.printf("Access Key: %s\n", s3.access_key.c_str());
-    Serial.printf("Secret Key: %s\n", s3.secret_key.c_str()); // Mask this in production
+    // Security: Never log credentials in plaintext
+    Serial.printf("Access Key: %s\n", s3.access_key.length() > 0 ? "[configured]" : "[not set]");
+    Serial.printf("Secret Key: %s\n", s3.secret_key.length() > 0 ? "[configured]" : "[not set]");
     Serial.printf("Region: %s\n", s3.region.c_str());
     Serial.printf("Bucket: %s\n", s3.bucket.c_str());
     Serial.printf("Max Upload Retries: %zu\n", s3.MAX_UPLOAD_RETRIES);

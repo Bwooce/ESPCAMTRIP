@@ -127,7 +127,7 @@ void UploadManager::uploadPendingDirectories() {
           // Exponential backoff: 2^retry * 1000ms (1s, 2s, 4s, 8s...)
           uint32_t backoffDelay = (1 << retry) * 1000;
           // Cap at 30 seconds
-          backoffDelay = min(backoffDelay, (uint32_t)30000U);
+          backoffDelay = min(backoffDelay, 30000UL);
           Serial.printf("Waiting %lu ms before retry...\n", (unsigned long)backoffDelay);
           delay(backoffDelay);
         }

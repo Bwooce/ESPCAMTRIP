@@ -5,12 +5,12 @@
 #include <HardwareSerial.h>
 
 // Default to MAVLink mode if neither is defined
-#if !defined(RTCM_OUTPUT_MAVLINK) && !defined(RTCM_OUTPUT_RAW)
-#define RTCM_OUTPUT_MAVLINK
+#if !defined(RTCM_OUTPUT_MAVLINK_DISABLED) && !defined(RTCM_OUTPUT_RAW)
+#define RTCM_OUTPUT_RAW
 #endif
 
-// Include MAVLink library for official protocol compliance
-#ifdef RTCM_OUTPUT_MAVLINK
+// MAVLink support - temporarily disabled due to header conflicts
+#ifdef RTCM_OUTPUT_MAVLINK_DISABLED
 #include <MAVLink.h>
 #endif
 
@@ -79,8 +79,8 @@ private:
   static double parseLongitude(const String& lon, const String& ew);
   static bool validateNMEAChecksum(const String& sentence);
 
-  // MAVLink parsing functions (using official library)
-#ifdef RTCM_OUTPUT_MAVLINK
+  // MAVLink parsing functions (temporarily disabled)
+#ifdef RTCM_OUTPUT_MAVLINK_DISABLED
   static bool parseMAVLinkGPSRaw(const mavlink_message_t* msg);
   static bool parseMAVLinkGlobalPosition(const mavlink_message_t* msg);
 #endif
@@ -107,7 +107,7 @@ private:
 
   // Configuration
   static const unsigned long POSITION_TIMEOUT_MS = 5000; // Position valid for 5 seconds
-  static constexpr float MAX_HDOP = 5.0;                  // Maximum acceptable HDOP
+  static constexpr float MAX_HDOP = 5.0f;                 // Maximum acceptable HDOP
   static const int MIN_SATELLITES = 4;                    // Minimum satellites for valid fix
 };
 

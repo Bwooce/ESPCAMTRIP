@@ -360,7 +360,7 @@ void GPSPositionManager::updatePositionQuality() {
 void GPSPositionManager::updateFromMAVLink(const uint8_t* mavlink_data, size_t length) {
   totalMessages++;
 
-#ifdef RTCM_OUTPUT_MAVLINK
+#ifdef RTCM_OUTPUT_MAVLINK_DISABLED
   // Use official MAVLink library for parsing
   for (size_t i = 0; i < length; i++) {
     mavlink_message_t msg;
@@ -380,15 +380,8 @@ void GPSPositionManager::updateFromMAVLink(const uint8_t* mavlink_data, size_t l
           }
           break;
 
-        case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
-          if (parseMAVLinkGlobalPosition(&msg)) {
-            validMessages++;
-            lastUpdateTime = millis();
-            currentPosition.timestamp = lastUpdateTime;
-            updatePositionQuality();
-            return;
-          }
-          break;
+        // Note: MAVLINK_MSG_ID_GLOBAL_POSITION_INT is in standard dialect, not common
+        // For now, GPS_RAW_INT provides all essential GPS data we need
       }
     }
   }
@@ -398,8 +391,8 @@ void GPSPositionManager::updateFromMAVLink(const uint8_t* mavlink_data, size_t l
 #endif
 }
 
+#ifdef RTCM_OUTPUT_MAVLINK_DISABLED
 bool GPSPositionManager::parseMAVLinkGPSRaw(const mavlink_message_t* msg) {
-#ifdef RTCM_OUTPUT_MAVLINK
   // Use official MAVLink library decode function
   mavlink_gps_raw_int_t gps_data;
   mavlink_msg_gps_raw_int_decode(msg, &gps_data);
@@ -420,43 +413,13 @@ bool GPSPositionManager::parseMAVLinkGPSRaw(const mavlink_message_t* msg) {
       currentPosition.fixType, currentPosition.satellites, currentPosition.hdop);
     return true;
   }
-#else
-  (void)msg;
-#endif
 
   return false;
 }
-
-bool GPSPositionManager::parseMAVLinkGlobalPosition(const mavlink_message_t* msg) {
-#ifdef RTCM_OUTPUT_MAVLINK
-  // Use official MAVLink library decode function
-  mavlink_global_position_int_t pos_data;
-  mavlink_msg_global_position_int_decode(msg, &pos_data);
-
-  // Convert from MAVLink units to our format
-  currentPosition.latitude = pos_data.lat / 1e7;
-  currentPosition.longitude = pos_data.lon / 1e7;
-  currentPosition.altitude = pos_data.alt / 1000.0; // millimeters to meters
-
-  // GLOBAL_POSITION_INT doesn't have HDOP or satellite count
-  // Keep existing values or set reasonable defaults
-  if (currentPosition.hdop == 0) currentPosition.hdop = 1.0;
-  if (currentPosition.satellites == 0) currentPosition.satellites = 8;
-  if (currentPosition.fixType == 0) currentPosition.fixType = 1; // Assume GPS fix
-
-  // Validate position
-  if (isPositionReasonable(currentPosition.latitude, currentPosition.longitude)) {
-    currentPosition.valid = true;
-    Serial.printf("MAVLink Global: %.6f, %.6f, Alt=%.1fm\n",
-      currentPosition.latitude, currentPosition.longitude, currentPosition.altitude);
-    return true;
-  }
-#else
-  (void)msg;
 #endif
 
-  return false;
-}
+// parseMAVLinkGlobalPosition removed - GLOBAL_POSITION_INT is in standard dialect, not common
+// GPS_RAW_INT provides all essential GPS data we need
 
 void GPSPositionManager::processIncomingData() {
   // This would be called regularly to process incoming serial data

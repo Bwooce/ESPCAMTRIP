@@ -28,6 +28,9 @@
 // NTRIP Atlas automatic service discovery
 #define NTRIP_ATLAS_ENABLED  // Enable automatic fallback service discovery
 
+// Visual Code Recognition Test Mode
+#define VISUAL_CODE_TEST_MODE  // Enable AprilTag recognition testing
+
 // Raw RTCM baud rate (only used when RTCM_OUTPUT_RAW is defined)
 // ZED-F9P defaults to 38400 on UART1/UART2 - change to match your receiver
 // or configure your receiver to 115200 via u-center
@@ -48,6 +51,10 @@
 #include "ntrip_client.h"
 #include "power_manager.h"
 #include "system_state.h"
+
+#ifdef VISUAL_CODE_TEST_MODE
+#include "apriltag_detection.h"
+#endif
 #include "esp_camera.h"
 
 // Task handles
@@ -248,9 +255,16 @@ void handleButtons() {
 }
 
 void cameraTask(void* parameter) {
+  // Initialize watchdog for camera task
+  esp_task_wdt_add(NULL);
+  Serial.println("Camera task started with watchdog protection");
+
   uint32_t notificationValue;
-  
+
   while (true) {
+    // Reset watchdog timer
+    esp_task_wdt_reset();
+
     // Wait for notification with timeout
     if (xTaskNotifyWait(0, 0xFFFFFFFF, &notificationValue, pdMS_TO_TICKS(100))) {
       if (notificationValue == 1) {
@@ -261,7 +275,7 @@ void cameraTask(void* parameter) {
         CameraManager::stopCapture();
       }
     }
-    
+
     // Handle continuous capture
     if (SystemState::isCapturing()) {
       unsigned long currentTime = millis();
@@ -270,16 +284,23 @@ void cameraTask(void* parameter) {
         SystemState::setLastCaptureTime(currentTime);
       }
     }
-    
+
     // Small delay to prevent task hogging
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
 void uploadTask(void* parameter) {
+  // Initialize watchdog for upload task
+  esp_task_wdt_add(NULL);
+  Serial.println("Upload task started with watchdog protection");
+
   uint32_t notificationValue;
-  
+
   while (true) {
+    // Reset watchdog timer
+    esp_task_wdt_reset();
+
     // Wait for notification with timeout
     if (xTaskNotifyWait(0, 0xFFFFFFFF, &notificationValue, pdMS_TO_TICKS(1000))) {
       if (notificationValue == 1) {
@@ -288,30 +309,30 @@ void uploadTask(void* parameter) {
         if (wasCapturing) {
           CameraManager::stopCapture();
         }
-        
+
         // Perform upload
         UploadManager::uploadPendingDirectories();
-        
+
         // Cleanup after upload
         StorageManager::performCleanup();
-        
+
         // Resume capture if it was active
         if (wasCapturing) {
           CameraManager::startCapture();
         }
       }
     }
-    
+
     // Check for scheduled uploads (every hour)
     static unsigned long lastScheduledUpload = 0;
-    if (Config::upload.AUTO_UPLOAD && 
+    if (Config::upload.AUTO_UPLOAD &&
         millis() - lastScheduledUpload > 3600000) { // 1 hour
       lastScheduledUpload = millis();
       if (uploadTaskHandle != NULL) {
         xTaskNotify(uploadTaskHandle, 1, eSetValueWithOverwrite);
       }
     }
-    
+
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }

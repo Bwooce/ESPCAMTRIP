@@ -15,9 +15,14 @@ bool PowerManager::initialized = false;
 uint32_t PowerManager::currentCpuFreq = 240;
 unsigned long PowerManager::lastPowerCheck = 0;
 
-// Battery monitoring pins (adjust for your board)
-#define BATTERY_ADC_PIN 34  // Example ADC pin for battery monitoring
-#define BATTERY_ADC_CHANNEL ADC1_CHANNEL_6
+// Battery monitoring pins (ESP32-S3 compatible)
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+  #define BATTERY_ADC_PIN 4     // ESP32-S3: GPIO 4 (ADC1_CH3)
+  #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_3
+#else
+  #define BATTERY_ADC_PIN 34    // ESP32: GPIO 34 (ADC1_CH6)
+  #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_6
+#endif
 #define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0  // Adjust based on your voltage divider
 
 void PowerManager::init() {
@@ -140,8 +145,16 @@ void PowerManager::configureUnusedPins() {
   io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
   io_conf.intr_type = GPIO_INTR_DISABLE;
   
-  // Configure pins 0-39 (adjust based on your board)
-  for (int pin = 0; pin < 40; pin++) {
+  // Configure GPIO pins based on ESP32 variant
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+  // ESP32-S3 has GPIO 0-48
+  const int max_gpio = 49;
+#else
+  // ESP32 has GPIO 0-39
+  const int max_gpio = 40;
+#endif
+
+  for (int pin = 0; pin < max_gpio; pin++) {
     if (!isSystemPin(pin) && !isPowerExemptPin(pin)) {
       io_conf.pin_bit_mask = (1ULL << pin);
       gpio_config(&io_conf);
