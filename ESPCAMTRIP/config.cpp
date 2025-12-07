@@ -31,6 +31,8 @@ namespace Config {
     5000,  // RTCM_TIMEOUT
     10000  // GGA_INTERVAL
   };
+  GPSConfig gps;
+  MAVLinkConfig mavlink;
   PinConfig pins;
   CameraPins cameraPins;
   TimingConfig timing;
@@ -38,6 +40,8 @@ namespace Config {
   PowerConfig power;
   UploadConfig upload;
   CameraConfig camera;
+  CameraModeConfig cameraMode;
+  AprilTagConfig apriltag;
 
   bool loadFromFile() {
     File configFile = StorageManager::openFile(storage.CONFIG_FILE, "r");

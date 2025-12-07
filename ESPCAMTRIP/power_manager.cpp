@@ -5,11 +5,10 @@
 #include <esp_pm.h>
 #include <esp_sleep.h>
 #include <driver/gpio.h>
-#include <esp_bt.h>
-#include <esp_bt_main.h>
 #include <esp_wifi.h>
 #include <esp_err.h>
 #include <driver/adc.h>
+// No Bluetooth needed for this camera/GPS application
 
 // Static member definitions
 bool PowerManager::initialized = false;
@@ -117,8 +116,7 @@ void PowerManager::setCpuFrequency(uint32_t freqMhz) {
 void PowerManager::disableUnusedPeripherals() {
   Serial.println("Disabling unused peripherals...");
   
-  // Disable Bluetooth
-  disableBluetooth();
+  // No Bluetooth to disable - not needed for this application
   
   // Configure unused GPIO pins
   configureUnusedPins();
@@ -132,32 +130,6 @@ void PowerManager::disableUnusedPeripherals() {
   Serial.println("Peripherals configured for low power");
 }
 
-void PowerManager::disableBluetooth() {
-  // Disable Bluetooth controller with error checking
-  esp_err_t err;
-  
-  err = esp_bluedroid_disable();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to disable Bluedroid: %s\n", esp_err_to_name(err));
-  }
-  
-  err = esp_bluedroid_deinit();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to deinit Bluedroid: %s\n", esp_err_to_name(err));
-  }
-  
-  err = esp_bt_controller_disable();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to disable BT controller: %s\n", esp_err_to_name(err));
-  }
-  
-  err = esp_bt_controller_deinit();
-  if (err != ESP_OK) {
-    Serial.printf("Failed to deinit BT controller: %s\n", esp_err_to_name(err));
-  } else {
-    Serial.println("Bluetooth disabled successfully");
-  }
-}
 
 void PowerManager::configureUnusedPins() {
   // Configure unused pins as inputs with pull-down to prevent floating

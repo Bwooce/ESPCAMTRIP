@@ -4,10 +4,10 @@
 #include <base64.h>
 #include <esp_task_wdt.h>
 
-// Only include MAVLink if using MAVLink output mode
-#ifdef RTCM_OUTPUT_MAVLINK
-#include <MAVLink.h>
-#endif
+// MAVLink headers - disabled for compilation
+// MAVLink library would need to be installed separately
+// #include <mavlink.h>
+#define MAVLINK_DISABLED
 
 // Default to MAVLink mode if neither is defined
 #if !defined(RTCM_OUTPUT_MAVLINK) && !defined(RTCM_OUTPUT_RAW)
@@ -99,10 +99,10 @@ bool NtripClient::init() {
   // Initialize UART for RTCM output
 #ifdef RTCM_OUTPUT_RAW
   Serial.printf("RTCM output mode: RAW (direct to GPS receiver) at %d baud\n", RTCM_RAW_BAUD_RATE);
-  mavlinkSerial.begin(RTCM_RAW_BAUD_RATE, SERIAL_8N1, Config::pins.RTCM_UART_RX, Config::pins.RTCM_UART_TX);
+  mavlinkSerial.begin(RTCM_RAW_BAUD_RATE, SERIAL_8N1, Config::pins.GPS_UART_RX, Config::pins.RTCM_UART_TX);
 #else
   Serial.println("RTCM output mode: MAVLink wrapped");
-  mavlinkSerial.begin(115200, SERIAL_8N1, Config::pins.RTCM_UART_RX, Config::pins.RTCM_UART_TX);
+  mavlinkSerial.begin(115200, SERIAL_8N1, Config::pins.GPS_UART_RX, Config::pins.RTCM_UART_TX);
 #endif
   
   // Reset statistics
@@ -399,7 +399,7 @@ void NtripClient::sendRawRTCM(uint8_t* msg, uint16_t msglen) {
   mavlinkSerial.write(msg, msglen);
 }
 
-#ifdef RTCM_OUTPUT_MAVLINK
+#if defined(RTCM_OUTPUT_MAVLINK) && !defined(MAVLINK_DISABLED)
 void NtripClient::sendMavLinkHeartbeat() {
   static uint32_t lastSent = 0;
   if (millis() - lastSent < 1000) return;

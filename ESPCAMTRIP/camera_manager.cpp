@@ -2,13 +2,18 @@
 #include "config.h"
 #include "system_state.h"
 #include "storage_manager.h"
+#include "gps_manager.h"
+#include "exif_gps_static.h"
+#include "psram_manager.h"
 #include <esp_camera.h>
+#include <ArduinoJson.h>
 
 // Static member definitions
 bool CameraManager::initialized = false;
 bool CameraManager::capturing = false;
 int CameraManager::photoCount = 0;
 String CameraManager::currentDirectory = "";
+bool CameraManager::geotaggingEnabled = false;
 
 bool CameraManager::init() {
   Serial.println("Initializing camera...");
@@ -293,6 +298,207 @@ bool CameraManager::isCameraPin(int pin) {
       return true;
     }
   }
-  
+
   return false;
+}
+
+// GPS Geotagging Functions
+
+bool CameraManager::enableGeotagging(bool enable) {
+  geotaggingEnabled = enable && Config::gps.enable_geotagging;
+  Serial.printf("GPS geotagging %s\n", geotaggingEnabled ? "enabled" : "disabled");
+  return geotaggingEnabled;
+}
+
+bool CameraManager::isGeotaggingEnabled() {
+  return geotaggingEnabled && GPSManager::hasValidFix();
+}
+
+bool CameraManager::captureGeotaggedPhoto() {
+  if (!initialized || !capturing) {
+    return false;
+  }
+
+  // Get camera frame
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("Camera capture failed");
+    return false;
+  }
+
+  // Generate filename (with GPS coordinates if available)
+  String filename = isGeotaggingEnabled() ? generateGeotaggedFilename() : generateFilename();
+  File file = StorageManager::openFile(filename, "w");
+
+  if (!file) {
+    Serial.println("Failed to create file: " + filename);
+    esp_camera_fb_return(fb);
+    return false;
+  }
+
+  // Embed EXIF GPS data if geotagging is enabled (static implementation)
+  size_t finalDataSize = fb->len;
+  uint8_t* finalData = fb->buf;
+  uint8_t* exifBuffer = nullptr;
+
+  if (isGeotaggingEnabled()) {
+    // Update static EXIF header with current GPS data
+    GPSPosition gpsPos = GPSManager::getPosition();
+    StaticEXIFGPS::updateGPS(gpsPos.latitude, gpsPos.longitude, gpsPos.altitude,
+                            gpsPos.valid ? time(nullptr) : 0, GPSManager::getFixQuality());
+
+    // Allocate buffer for JPEG + EXIF (using PSRAM for large allocations)
+    size_t bufferSize = fb->len + StaticEXIFGPS::getHeaderSize();
+    exifBuffer = (uint8_t*)PSRAMManager::allocate(bufferSize);
+
+    if (exifBuffer) {
+      // Copy original JPEG data
+      memcpy(exifBuffer, fb->buf, fb->len);
+
+      // Embed static EXIF data
+      size_t newSize = StaticEXIFGPS::embedIntoJPEG(exifBuffer, fb->len, bufferSize);
+      if (newSize > 0) {
+        finalData = exifBuffer;
+        finalDataSize = newSize;
+        Serial.printf("Static EXIF GPS embedded (%u bytes added)\n", newSize - fb->len);
+      } else {
+        Serial.println("Failed to embed static EXIF GPS, using original JPEG");
+        PSRAMManager::deallocate(exifBuffer);
+        exifBuffer = nullptr;
+      }
+    } else {
+      Serial.println("Failed to allocate EXIF buffer from PSRAM");
+    }
+  }
+
+  // Write final image data
+  size_t written = file.write(finalData, finalDataSize);
+  StorageManager::closeFile(file);
+
+  // Clean up EXIF buffer if allocated
+  if (exifBuffer) {
+    PSRAMManager::deallocate(exifBuffer);
+  }
+
+  // Return frame buffer
+  esp_camera_fb_return(fb);
+
+  // Check write success
+  if (written == finalDataSize) {
+    photoCount++;
+    SystemState::incrementPhotoCount();
+
+    // Save GPS metadata if geotagging is enabled
+    if (isGeotaggingEnabled()) {
+      saveGPSMetadata(filename);
+      Serial.printf("Geotagged photo %04d saved: %u bytes (GPS: %.6f, %.6f)\n",
+                    photoCount - 1, (unsigned)fb->len,
+                    GPSManager::getPosition().latitude,
+                    GPSManager::getPosition().longitude);
+    } else {
+      Serial.printf("Photo %04d saved: %u bytes\n", photoCount - 1, (unsigned)fb->len);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+String CameraManager::generateGeotaggedFilename() {
+  char filename[150];
+
+  if (isGeotaggingEnabled()) {
+    GPSPosition gpsPos = GPSManager::getPosition();
+    // Format: photo_0001_N3752.1234_E14510.5678_RTK.jpg
+    // Converts decimal degrees to DDMM.MMMM format for filename
+    double lat = abs(gpsPos.latitude);
+    double lon = abs(gpsPos.longitude);
+    int latDeg = (int)lat;
+    int lonDeg = (int)lon;
+    double latMin = (lat - latDeg) * 60.0;
+    double lonMin = (lon - lonDeg) * 60.0;
+
+    char latHem = (gpsPos.latitude >= 0) ? 'N' : 'S';
+    char lonHem = (gpsPos.longitude >= 0) ? 'E' : 'W';
+
+    const char* fixType = GPSManager::hasRTKFix() ? "RTK" : "GPS";
+
+    sprintf(filename, "%s/photo_%04d_%c%02d%06.3f_%c%03d%06.3f_%s.jpg",
+            currentDirectory.c_str(), photoCount,
+            latHem, latDeg, latMin,
+            lonHem, lonDeg, lonMin,
+            fixType);
+  } else {
+    // Fallback to regular filename if GPS not available
+    sprintf(filename, "%s/photo_%04d.jpg", currentDirectory.c_str(), photoCount);
+  }
+
+  return String(filename);
+}
+
+bool CameraManager::saveGPSMetadata(const String& photoFilename) {
+  if (!isGeotaggingEnabled()) {
+    return false;
+  }
+
+  // Create metadata filename by replacing .jpg with .json
+  String metadataFilename = photoFilename;
+  metadataFilename.replace(".jpg", ".json");
+
+  // Get current GPS position
+  GPSPosition gpsPos = GPSManager::getPosition();
+  GPSStatistics gpsStats = GPSManager::getStatistics();
+
+  // Create JSON document
+  DynamicJsonDocument doc(1024);
+
+  // Basic photo info
+  doc["photo_filename"] = photoFilename.substring(photoFilename.lastIndexOf('/') + 1);
+  doc["photo_number"] = photoCount;
+  doc["capture_time"] = millis();
+  doc["unix_timestamp"] = gpsPos.timestamp;
+
+  // GPS position data
+  JsonObject gps = doc.createNestedObject("gps");
+  gps["latitude"] = gpsPos.latitude;
+  gps["longitude"] = gpsPos.longitude;
+  gps["altitude_msl"] = gpsPos.altitude;
+  gps["horizontal_accuracy"] = gpsPos.accuracy;
+  gps["speed_ms"] = gpsPos.speed;
+  gps["course_degrees"] = gpsPos.course;
+
+  // GPS quality indicators
+  gps["fix_quality"] = gpsPos.fixQuality;
+  gps["fix_quality_text"] = GPSManager::getFixQualityString(gpsPos.fixQuality);
+  gps["satellites_used"] = gpsPos.satellites;
+  gps["hdop"] = gpsPos.hdop;
+  gps["vdop"] = gpsPos.vdop;
+  gps["age_of_diff"] = gpsPos.ageOfDiff;
+  gps["valid"] = gpsPos.valid;
+
+  // GPS statistics
+  JsonObject stats = doc.createNestedObject("gps_stats");
+  stats["messages_received"] = gpsStats.messagesReceived;
+  stats["messages_processed"] = gpsStats.messagesProcessed;
+  stats["parse_errors"] = gpsStats.parseErrors;
+  stats["checksum_errors"] = gpsStats.checksumErrors;
+  stats["message_rate_hz"] = gpsStats.messageRate;
+
+  // Camera settings
+  JsonObject camera = doc.createNestedObject("camera");
+  camera["frame_size"] = Config::camera.FRAME_SIZE;
+  camera["jpeg_quality"] = Config::camera.JPEG_QUALITY;
+  camera["pixel_format"] = "JPEG";
+
+  // Write JSON to file
+  File metaFile = StorageManager::openFile(metadataFilename, "w");
+  if (!metaFile) {
+    Serial.println("Failed to create metadata file: " + metadataFilename);
+    return false;
+  }
+
+  serializeJsonPretty(doc, metaFile);
+  StorageManager::closeFile(metaFile);
+
+  return true;
 }

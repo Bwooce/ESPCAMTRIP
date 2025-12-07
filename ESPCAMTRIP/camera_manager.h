@@ -31,18 +31,26 @@ public:
   static int getPhotoCount();
   static String getCurrentDirectory();
   static bool isCameraPin(int pin); // Moved to public
-  
+
+  // GPS Geotagging
+  static bool enableGeotagging(bool enable);
+  static bool isGeotaggingEnabled();
+  static bool captureGeotaggedPhoto();
+
 private:
   static bool initialized;
   static bool capturing;
   static int photoCount;
   static String currentDirectory;
-  
+  static bool geotaggingEnabled;
+
   // Camera configuration
   static camera_config_t getCameraConfig();
   static void applyCameraSettings();
   static bool createCaptureDirectory();
   static String generateFilename();
+  static String generateGeotaggedFilename();
+  static bool saveGPSMetadata(const String& photoFilename);
   
   // Pin validation
   // static bool isCameraPin(int pin); // Removed from private

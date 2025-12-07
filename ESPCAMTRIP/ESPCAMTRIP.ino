@@ -30,6 +30,17 @@
 // or configure your receiver to 115200 via u-center
 #define RTCM_RAW_BAUD_RATE 115200
 
+// GPS Input Mode: Choose ONE of the following input modes
+// GPS_INPUT_RAW (default) - NMEA/UBX data directly from F9P GPS receiver
+// GPS_INPUT_MAVLINK       - GPS data via MAVLink from ArduPilot flight controller
+#define GPS_INPUT_RAW  // Default: Direct GPS receiver connection
+
+// Landing Mode Timeout (3 minutes)
+#define LANDING_MODE_TIMEOUT_MS (3 * 60 * 1000)
+
+// AprilTag Detection (enable when library is installed)
+#define APRILTAG_ENABLED
+
 // ============================================================================
 
 #include <Arduino.h>
@@ -39,12 +50,18 @@
 #include <esp_task_wdt.h>
 #include "config.h"
 #include "camera_manager.h"
+#include "camera_mode_manager.h"
+#include "gps_manager.h"
 #include "storage_manager.h"
 #include "wifi_manager.h"
 #include "upload_manager.h"
 #include "ntrip_client.h"
 #include "power_manager.h"
 #include "system_state.h"
+#include "apriltag_manager.h"
+#include "mavlink_manager.h"
+#include "psram_manager.h"
+#include "exif_gps_static.h"
 #include "esp_camera.h"
 
 // Task handles
@@ -56,6 +73,10 @@ TaskHandle_t ntripTaskHandle = NULL;
 unsigned long lastDebounceTime = 0;
 bool lastCaptureState = HIGH;
 bool lastUploadState = HIGH;
+
+// Camera mode state machine
+unsigned long landingModeStartTime = 0;
+bool landingModeActive = false;
 
 // Function declarations
 void cameraTask(void* parameter);
@@ -131,32 +152,63 @@ void setup() {
 }
 
 void loop() {
-  // Handle button inputs
+  // Update GPS Manager
+  if (Config::gps.enabled) {
+    GPSManager::update();
+  }
+
+  // Update Camera Mode Manager
+  CameraModeManager::update();
+
+  // Update MAVLink Manager
+  MAVLinkManager::update();
+
+  // Handle button inputs and state machine
   handleButtons();
-  
+
+  // Check landing mode timeout
+  if (landingModeActive &&
+      (millis() - landingModeStartTime > LANDING_MODE_TIMEOUT_MS)) {
+    Serial.println("Landing mode timeout - powering down");
+    // Could trigger a graceful shutdown here
+    landingModeActive = false;
+  }
+
   // Perform periodic health check
   static unsigned long lastHealthCheck = 0;
   if (millis() - lastHealthCheck > 30000) {
     performHealthCheck();
     lastHealthCheck = millis();
   }
-  
+
   // Coordinate power management
   PowerManager::coordinatePowerManagement();
-  
+
   // Small delay to prevent CPU hogging
   delay(10);
 }
 
 void initializeSystem() {
+  // Initialize PSRAM first (critical for camera operations)
+  if (!PSRAMManager::init()) {
+    Serial.println("CRITICAL: PSRAM initialization failed!");
+    Serial.println("Camera operations may fail at high resolutions");
+    // Continue anyway for testing
+  }
+
   // Initialize GPIO pins
   pinMode(Config::pins.CAPTURE_TRIGGER_PIN, INPUT_PULLUP);
   pinMode(Config::pins.UPLOAD_TRIGGER_PIN, INPUT_PULLUP);
   pinMode(Config::pins.LED_STATUS_PIN, OUTPUT);
   digitalWrite(Config::pins.LED_STATUS_PIN, LOW);
-  
+
   // Initialize system state
   SystemState::init();
+
+  // Initialize static EXIF GPS system
+  if (!StaticEXIFGPS::init()) {
+    Serial.println("WARNING: Static EXIF GPS initialization failed!");
+  }
   
   // Initialize storage (SD card)
   if (!StorageManager::init()) {
@@ -179,13 +231,34 @@ void initializeSystem() {
   // Initialize time
   WiFiManager::initializeTime();
   
-  // Initialize camera
+  // Initialize GPS Manager
+  if (Config::gps.enabled) {
+    if (!GPSManager::init()) {
+      Serial.println("WARNING: GPS Manager initialization failed!");
+      // Continue without GPS - system can still work
+    } else {
+      Serial.println("GPS Manager initialized successfully");
+    }
+  }
+
+  // Initialize Camera Mode Manager
+  if (!CameraModeManager::init()) {
+    Serial.println("WARNING: Camera Mode Manager initialization failed!");
+  }
+
+  // Initialize camera (starts in IDLE mode)
   if (!CameraManager::init()) {
     Serial.println("WARNING: Camera initialization failed!");
     // Continue without camera - NTRIP can still work
   }
-  
-  // Power down camera initially
+
+  // Enable GPS geotagging if available
+  if (Config::gps.enabled && Config::gps.enable_geotagging) {
+    CameraManager::enableGeotagging(true);
+    Serial.println("GPS geotagging enabled");
+  }
+
+  // Power down camera initially (will be in IDLE mode)
   if (Config::power.CAMERA_POWER_MANAGEMENT) {
     CameraManager::powerDown();
   }
@@ -195,7 +268,14 @@ void initializeSystem() {
   
   // Perform initial cleanup
   StorageManager::performCleanup();
-  
+
+  // Initialize MAVLink manager for landing target output
+  if (MAVLinkManager::init()) {
+    Serial.println("MAVLink manager initialized for landing target messages");
+  } else {
+    Serial.println("MAVLink manager initialization failed - landing target output disabled");
+  }
+
   // Initialize power management
   if (Config::power.ENABLE_OPTIMIZATION) {
     PowerManager::init();
@@ -212,20 +292,42 @@ void handleButtons() {
     
     lastDebounceTime = millis();
     
-    // Handle capture button (falling edge)
+    // Handle capture button (falling edge) - Camera Mode State Machine
     if (lastCaptureState == HIGH && currentCaptureState == LOW) {
       SystemState::updateActivity();
-      
-      if (!SystemState::isCapturing()) {
-        // Signal camera task to start capture
-        if (cameraTaskHandle) {
-          xTaskNotify(cameraTaskHandle, 1, eSetValueWithOverwrite);
-        }
-      } else {
-        // Signal camera task to stop capture
-        if (cameraTaskHandle) {
-          xTaskNotify(cameraTaskHandle, 2, eSetValueWithOverwrite);
-        }
+
+      CameraMode currentMode = CameraModeManager::getMode();
+
+      switch (currentMode) {
+        case Config::CAMERA_MODE_IDLE:
+          // Transition: IDLE → MISSION (start capturing)
+          Serial.println("State transition: IDLE → MISSION");
+          if (CameraModeManager::setMode(Config::CAMERA_MODE_MISSION)) {
+            // Signal camera task to start mission capture
+            if (cameraTaskHandle) {
+              xTaskNotify(cameraTaskHandle, 1, eSetValueWithOverwrite);
+            }
+          }
+          break;
+
+        case Config::CAMERA_MODE_MISSION:
+          // Transition: MISSION → LANDING (stop capturing, start AprilTag detection)
+          Serial.println("State transition: MISSION → LANDING");
+          if (CameraModeManager::setMode(Config::CAMERA_MODE_LANDING)) {
+            // Signal camera task to stop mission capture and start landing mode
+            if (cameraTaskHandle) {
+              xTaskNotify(cameraTaskHandle, 2, eSetValueWithOverwrite);
+            }
+            // Start landing mode timer
+            landingModeStartTime = millis();
+            landingModeActive = true;
+          }
+          break;
+
+        case Config::CAMERA_MODE_LANDING:
+          // No action in landing mode - will timeout or power down
+          Serial.println("In landing mode - button press ignored");
+          break;
       }
     }
     
@@ -246,28 +348,98 @@ void handleButtons() {
 
 void cameraTask(void* parameter) {
   uint32_t notificationValue;
-  
+
   while (true) {
     // Wait for notification with timeout
     if (xTaskNotifyWait(0, 0xFFFFFFFF, &notificationValue, pdMS_TO_TICKS(100))) {
+      CameraMode currentMode = CameraModeManager::getMode();
+
       if (notificationValue == 1) {
-        // Start capture
-        CameraManager::startCapture();
+        // Start mission capture (IDLE → MISSION transition)
+        if (currentMode == Config::CAMERA_MODE_MISSION) {
+          Serial.println("Starting mission capture (geotagged photos)");
+          CameraManager::startCapture();
+        }
       } else if (notificationValue == 2) {
-        // Stop capture
-        CameraManager::stopCapture();
+        // Stop mission capture (MISSION → LANDING transition)
+        if (currentMode == Config::CAMERA_MODE_LANDING) {
+          Serial.println("Stopping mission capture, starting landing mode");
+          CameraManager::stopCapture();
+          // Landing mode will be handled in the continuous processing below
+        }
       }
     }
-    
-    // Handle continuous capture
-    if (SystemState::isCapturing()) {
-      unsigned long currentTime = millis();
-      if (currentTime - SystemState::getLastCaptureTime() >= Config::timing.CAPTURE_INTERVAL) {
-        CameraManager::capturePhoto();
-        SystemState::setLastCaptureTime(currentTime);
-      }
+
+    CameraMode currentMode = CameraModeManager::getMode();
+
+    // Handle mode-specific continuous processing
+    switch (currentMode) {
+      case Config::CAMERA_MODE_MISSION:
+        // Mission mode: Capture geotagged photos at configured interval
+        if (SystemState::isCapturing() && CameraModeManager::shouldCapture()) {
+          CameraModeManager::recordCaptureStart();
+
+          // Use geotagged capture if GPS is available
+          bool success;
+          if (CameraManager::isGeotaggingEnabled()) {
+            success = CameraManager::captureGeotaggedPhoto();
+          } else {
+            success = CameraManager::capturePhoto();
+          }
+
+          CameraModeManager::recordCaptureComplete(success);
+          SystemState::setLastCaptureTime(millis());
+        }
+        break;
+
+      case Config::CAMERA_MODE_LANDING:
+        // Landing mode: Process frames for AprilTag detection (no file saving)
+        if (CameraModeManager::shouldCapture()) {
+          CameraModeManager::recordCaptureStart();
+
+          // Get frame for AprilTag processing
+          camera_fb_t *fb = esp_camera_fb_get();
+          if (fb) {
+            // Process frame for AprilTag detection
+            int tags_detected = 0;
+            if (AprilTagManager::isInitialized() && AprilTagManager::isEnabled()) {
+              tags_detected = AprilTagManager::processFrame(fb);
+
+              // Log detection results periodically
+              static uint32_t frame_count = 0;
+              frame_count++;
+              if (frame_count % 50 == 0 || tags_detected > 0) {
+                if (tags_detected > 0) {
+                  AprilTagDetection detection = AprilTagManager::getLastDetection();
+                  Serial.printf("LANDING: AprilTag ID=%d detected at (%.1f,%.1f), margin=%.2f\n",
+                                detection.id, detection.center_x, detection.center_y,
+                                detection.decision_margin);
+
+                  // Generate MAVLink LANDING_TARGET message
+                  if (MAVLinkManager::isInitialized() && MAVLinkManager::isEnabled()) {
+                    MAVLinkManager::sendLandingTarget(detection);
+                  }
+                } else if (frame_count % 100 == 0) {
+                  Serial.printf("LANDING: Processed %u frames, no tags detected\n", frame_count);
+                }
+              }
+            }
+
+            esp_camera_fb_return(fb);
+
+            // Record processing for statistics (success if frame processed)
+            CameraModeManager::recordCaptureComplete(true);
+          } else {
+            CameraModeManager::recordCaptureComplete(false);
+          }
+        }
+        break;
+
+      case Config::CAMERA_MODE_IDLE:
+        // Idle mode: Do nothing
+        break;
     }
-    
+
     // Small delay to prevent task hogging
     vTaskDelay(pdMS_TO_TICKS(10));
   }
@@ -318,6 +490,9 @@ void performHealthCheck() {
   Serial.printf("Uptime: %lu seconds\n", millis() / 1000);
   Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap());
   Serial.printf("WiFi RSSI: %d dBm\n", WiFi.RSSI());
+
+  // Check PSRAM status
+  PSRAMManager::printMemoryStatus();
   
   // Check SD card
   if (!StorageManager::verifyCard()) {
@@ -342,10 +517,33 @@ void performHealthCheck() {
   }
   
   if (ntripTaskHandle) {
-    Serial.printf("NTRIP task: %s\n", 
+    Serial.printf("NTRIP task: %s\n",
                   eTaskGetState(ntripTaskHandle) == eRunning ? "Running" : "Not running");
     NtripClient::printStatistics();
   }
-  
+
+  // Check GPS status
+  if (Config::gps.enabled) {
+    Serial.printf("GPS: %s", GPSManager::hasValidFix() ? "Valid fix" : "No fix");
+    if (GPSManager::hasValidFix()) {
+      Serial.printf(" (%s, %d sats)",
+                    GPSManager::getFixQualityString(GPSManager::getFixQuality()).c_str(),
+                    GPSManager::getSatelliteCount());
+    }
+    Serial.println();
+    if (CameraManager::isGeotaggingEnabled()) {
+      Serial.println("Geotagging: Enabled");
+    }
+  }
+
+  // Check camera mode
+  CameraMode currentMode = CameraModeManager::getMode();
+  Serial.printf("Camera Mode: %s", CameraModeManager::getModeString(currentMode));
+  if (landingModeActive) {
+    unsigned long remaining = (LANDING_MODE_TIMEOUT_MS - (millis() - landingModeStartTime)) / 1000;
+    Serial.printf(" (timeout in %lu sec)", remaining);
+  }
+  Serial.println();
+
   Serial.println("-------------------\n");
 }
