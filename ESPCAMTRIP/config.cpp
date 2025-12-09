@@ -1,6 +1,7 @@
 #include "config.h"
 #include "storage_manager.h"
 #include <ArduinoJson.h>
+#include <SPIFFS.h>
 
 namespace Config {
   // Create instances
@@ -40,18 +41,52 @@ namespace Config {
   CameraConfig camera;
 
   bool loadFromFile() {
-    File configFile = StorageManager::openFile(storage.CONFIG_FILE, "r");
-    if (!configFile) {
-      Serial.println("No config file found, using defaults");
-      return false;
+    String jsonStr = "";
+
+    // Try SPIFFS first (where we uploaded the config)
+    if (!SPIFFS.begin(true)) {
+      Serial.println("SPIFFS mount failed");
+    } else {
+      File spiffsFile = SPIFFS.open(storage.CONFIG_FILE, "r");
+      if (spiffsFile) {
+        size_t fileSize = spiffsFile.size();
+        Serial.printf("Loading configuration from SPIFFS... File size: %zu bytes\n", fileSize);
+
+        if (fileSize > 0) {
+          while (spiffsFile.available()) {
+            jsonStr += (char)spiffsFile.read();
+          }
+          Serial.printf("Read %d characters from SPIFFS\n", jsonStr.length());
+
+          // Debug: show first 100 characters
+          if (jsonStr.length() > 0) {
+            String preview = jsonStr.length() > 100 ? jsonStr.substring(0, 100) + "..." : jsonStr;
+            Serial.println("Config preview: " + preview);
+          }
+        } else {
+          Serial.println("SPIFFS config file is empty!");
+        }
+
+        spiffsFile.close();
+      } else {
+        Serial.println("Config file not found in SPIFFS");
+      }
     }
 
-    // Read the file
-    String jsonStr = "";
-    while (configFile.available()) {
-      jsonStr += (char)configFile.read();
+    // If SPIFFS failed, try SD card
+    if (jsonStr.length() == 0) {
+      File configFile = StorageManager::openFile(storage.CONFIG_FILE, "r");
+      if (configFile) {
+        Serial.println("Loading configuration from SD card...");
+        while (configFile.available()) {
+          jsonStr += (char)configFile.read();
+        }
+        StorageManager::closeFile(configFile);
+      } else {
+        Serial.println("No config file found on SD card either, using defaults");
+        return false;
+      }
     }
-    StorageManager::closeFile(configFile);
 
     // Parse JSON
     JsonDocument doc;

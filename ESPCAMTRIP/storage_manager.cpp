@@ -23,100 +23,182 @@ bool StorageManager::init() {
     return false;
   }
   
-  // Try 1-bit mode first (more compatible)
-  if (!SD_MMC.begin("/sdcard", true)) {
-    Serial.println("SD Card mount failed in 1-bit mode, trying 4-bit...");
-    
-    // Try 4-bit mode
-    if (!SD_MMC.begin()) {
+  // Configure SD card pins for different boards
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    // Xiao ESP32S3 Sense: Use SPI mode with specific pins
+    // CS=GPIO21, SCK=GPIO7, MISO=GPIO8, MOSI=GPIO9
+    Serial.println("Configuring SD card for Xiao ESP32S3 Sense (SPI mode)");
+    Serial.println("SD pins: CS=21, SCK=7, MISO=8, MOSI=9");
+
+    // Initialize SD card in SPI mode with CS pin 21
+    bool sdSuccess = false;
+    if (!SD.begin(21)) {
       Serial.println("SD Card mount failed!");
-      giveMutex();
-      return false;
+      Serial.println("System will continue without SD card storage.");
+      Serial.println("Photos will not be saved locally, only uploaded to S3.");
+    } else {
+      sdSuccess = true;
+      Serial.println("SD Card mounted successfully in SPI mode");
+    }
+  #else
+    // Use default MMC pins for other boards
+    Serial.println("Using default SD_MMC card pins");
+
+    // Try 1-bit mode first (more compatible)
+    bool sdSuccess = false;
+    if (!SD_MMC.begin("/sdcard", true)) {
+      Serial.println("SD Card mount failed in 1-bit mode, trying 4-bit...");
+
+      // Try 4-bit mode
+      if (!SD_MMC.begin()) {
+        Serial.println("SD Card mount failed!");
+        Serial.println("System will continue without SD card storage.");
+        Serial.println("Photos will not be saved locally, only uploaded to S3.");
+      } else {
+        sdSuccess = true;
+      }
+    } else {
+      sdSuccess = true;
+    }
+  #endif
+
+  if (sdSuccess) {
+    #if defined(ARDUINO_XIAO_ESP32S3)
+      // For SPI mode on Xiao ESP32S3 Sense
+      uint8_t cardType = SD.cardType();
+      if (cardType == CARD_NONE) {
+        Serial.println("No SD card attached");
+        sdSuccess = false;
+      } else {
+        Serial.print("SD Card Type: ");
+        switch (cardType) {
+          case CARD_MMC:  Serial.println("MMC"); break;
+          case CARD_SD:   Serial.println("SDSC"); break;
+          case CARD_SDHC: Serial.println("SDHC"); break;
+          default:        Serial.println("UNKNOWN"); break;
+        }
+
+        uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+        uint64_t totalBytes = SD.totalBytes();
+        uint64_t usedBytes = SD.usedBytes();
+
+        Serial.printf("SD Card Size: %lluMB\n", cardSize);
+        Serial.printf("Total space: %.2f GB\n", totalBytes / 1024.0 / 1024.0 / 1024.0);
+        Serial.printf("Used space: %.2f GB\n", usedBytes / 1024.0 / 1024.0 / 1024.0);
+        Serial.printf("Free space: %.2f GB\n", (totalBytes - usedBytes) / 1024.0 / 1024.0 / 1024.0);
+      }
+    #else
+      // For MMC mode on other boards
+      uint8_t cardType = SD_MMC.cardType();
+      if (cardType == CARD_NONE) {
+        Serial.println("No SD card attached");
+        sdSuccess = false;
+      } else {
+        Serial.print("SD Card Type: ");
+        switch (cardType) {
+          case CARD_MMC:  Serial.println("MMC"); break;
+          case CARD_SD:   Serial.println("SDSC"); break;
+          case CARD_SDHC: Serial.println("SDHC"); break;
+          default:        Serial.println("UNKNOWN"); break;
+        }
+
+        uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
+        uint64_t totalBytes = SD_MMC.totalBytes();
+        uint64_t usedBytes = SD_MMC.usedBytes();
+
+        Serial.printf("SD Card Size: %lluMB\n", cardSize);
+        Serial.printf("Total space: %.2f GB\n", totalBytes / 1024.0 / 1024.0 / 1024.0);
+        Serial.printf("Used space: %.2f GB\n", usedBytes / 1024.0 / 1024.0 / 1024.0);
+        Serial.printf("Free space: %.2f GB\n", (totalBytes - usedBytes) / 1024.0 / 1024.0 / 1024.0);
+      }
+    #endif
+  }
+
+  giveMutex();
+
+  // Set initialization status based on SD success (but system can work without SD)
+  initialized = sdSuccess ? verifyCard() : true;
+
+  if (initialized) {
+    if (sdSuccess) {
+      Serial.println("Storage manager initialized successfully with SD card");
+    } else {
+      Serial.println("Storage manager initialized successfully (SPIFFS only, no SD card)");
     }
   }
-  
-  uint8_t cardType = SD_MMC.cardType();
-  if (cardType == CARD_NONE) {
-    Serial.println("No SD card attached");
-    giveMutex();
-    return false;
-  }
-  
-  Serial.print("SD Card Type: ");
-  switch (cardType) {
-    case CARD_MMC:  Serial.println("MMC"); break;
-    case CARD_SD:   Serial.println("SDSC"); break;
-    case CARD_SDHC: Serial.println("SDHC"); break;
-    default:        Serial.println("UNKNOWN"); break;
-  }
-  
-  uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
-  uint64_t totalBytes = SD_MMC.totalBytes();
-  uint64_t usedBytes = SD_MMC.usedBytes();
-  
-  Serial.printf("SD Card Size: %lluMB\n", cardSize);
-  Serial.printf("Total space: %.2f GB\n", totalBytes / 1024.0 / 1024.0 / 1024.0);
-  Serial.printf("Used space: %.2f GB\n", usedBytes / 1024.0 / 1024.0 / 1024.0);
-  Serial.printf("Free space: %.2f GB\n", (totalBytes - usedBytes) / 1024.0 / 1024.0 / 1024.0);
-  
-  giveMutex();
-  
-  initialized = verifyCard();
-  
-  if (initialized) {
-    Serial.println("Storage manager initialized successfully");
-  }
-  
+
   return initialized;
 }
 
 bool StorageManager::verifyCard() {
   const char* testFile = "/test_write.tmp";
-  
+
   if (!takeMutex()) {
     return false;
   }
-  
+
   // Test write
-  File file = SD_MMC.open(testFile, FILE_WRITE);
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    File file = SD.open(testFile, FILE_WRITE);
+  #else
+    File file = SD_MMC.open(testFile, FILE_WRITE);
+  #endif
+
   if (!file) {
     Serial.println("Failed to create test file");
     giveMutex();
     return false;
   }
-  
+
   const char* testData = "SD card test";
   size_t written = file.print(testData);
   file.close();
-  
+
   if (written != strlen(testData)) {
     Serial.println("Failed to write test data");
-    SD_MMC.remove(testFile);
+    #if defined(ARDUINO_XIAO_ESP32S3)
+      SD.remove(testFile);
+    #else
+      SD_MMC.remove(testFile);
+    #endif
     giveMutex();
     return false;
   }
-  
+
   // Test read
-  file = SD_MMC.open(testFile, FILE_READ);
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    file = SD.open(testFile, FILE_READ);
+  #else
+    file = SD_MMC.open(testFile, FILE_READ);
+  #endif
+
   if (!file) {
     Serial.println("Failed to read test file");
-    SD_MMC.remove(testFile);
+    #if defined(ARDUINO_XIAO_ESP32S3)
+      SD.remove(testFile);
+    #else
+      SD_MMC.remove(testFile);
+    #endif
     giveMutex();
     return false;
   }
-  
+
   String readData = file.readString();
   file.close();
-  
+
   // Clean up
-  SD_MMC.remove(testFile);
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    SD.remove(testFile);
+  #else
+    SD_MMC.remove(testFile);
+  #endif
   giveMutex();
-  
+
   if (readData != testData) {
     Serial.println("Read data doesn't match written data");
     return false;
   }
-  
+
   Serial.println("SD card verified successfully");
   return true;
 }
@@ -125,10 +207,15 @@ File StorageManager::openFile(const String& path, const char* mode) {
   if (!initialized || !takeMutex(1000)) {
     return File();
   }
-  
-  File file = SD_MMC.open(path.c_str(), mode);
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    File file = SD.open(path.c_str(), mode);
+  #else
+    File file = SD_MMC.open(path.c_str(), mode);
+  #endif
+
   giveMutex();
-  
+
   return file;
 }
 
@@ -144,10 +231,15 @@ bool StorageManager::exists(const String& path) {
   if (!initialized || !takeMutex(1000)) {
     return false;
   }
-  
-  bool result = SD_MMC.exists(path.c_str());
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    bool result = SD.exists(path.c_str());
+  #else
+    bool result = SD_MMC.exists(path.c_str());
+  #endif
+
   giveMutex();
-  
+
   return result;
 }
 
@@ -155,10 +247,15 @@ bool StorageManager::remove(const String& path) {
   if (!initialized || !takeMutex(1000)) {
     return false;
   }
-  
-  bool result = SD_MMC.remove(path.c_str());
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    bool result = SD.remove(path.c_str());
+  #else
+    bool result = SD_MMC.remove(path.c_str());
+  #endif
+
   giveMutex();
-  
+
   return result;
 }
 
@@ -166,10 +263,15 @@ bool StorageManager::mkdir(const String& path) {
   if (!initialized || !takeMutex(1000)) {
     return false;
   }
-  
-  bool result = SD_MMC.mkdir(path.c_str());
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    bool result = SD.mkdir(path.c_str());
+  #else
+    bool result = SD_MMC.mkdir(path.c_str());
+  #endif
+
   giveMutex();
-  
+
   return result;
 }
 
@@ -177,52 +279,67 @@ bool StorageManager::rmdir(const String& path) {
   if (!initialized || !takeMutex(1000)) {
     return false;
   }
-  
-  bool result = SD_MMC.rmdir(path.c_str());
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    bool result = SD.rmdir(path.c_str());
+  #else
+    bool result = SD_MMC.rmdir(path.c_str());
+  #endif
+
   giveMutex();
-  
+
   return result;
 }
 
 std::vector<String> StorageManager::listDirectory(const String& path) {
   std::vector<String> files;
-  
+
   if (!initialized || !takeMutex(1000)) {
     return files;
   }
-  
-  File root = SD_MMC.open(path.c_str());
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    File root = SD.open(path.c_str());
+  #else
+    File root = SD_MMC.open(path.c_str());
+  #endif
+
   if (!root || !root.isDirectory()) {
     giveMutex();
     return files;
   }
-  
+
   File file = root.openNextFile();
   while (file) {
     files.push_back(String(file.name()));
     file.close();
     file = root.openNextFile();
   }
-  
+
   root.close();
   giveMutex();
-  
+
   return files;
 }
 
 std::vector<String> StorageManager::getCaptureDirectories() {
   std::vector<String> directories;
-  
+
   if (!initialized || !takeMutex(1000)) {
     return directories;
   }
-  
-  File root = SD_MMC.open("/");
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    File root = SD.open("/");
+  #else
+    File root = SD_MMC.open("/");
+  #endif
+
   if (!root || !root.isDirectory()) {
     giveMutex();
     return directories;
   }
-  
+
   File file = root.openNextFile();
   while (file) {
     if (file.isDirectory()) {
@@ -234,13 +351,13 @@ std::vector<String> StorageManager::getCaptureDirectories() {
     file.close();
     file = root.openNextFile();
   }
-  
+
   root.close();
   giveMutex();
-  
+
   // Sort by name (which includes timestamp)
   std::sort(directories.begin(), directories.end());
-  
+
   return directories;
 }
 
@@ -252,12 +369,17 @@ bool StorageManager::removeDirectoryRecursively(const String& path) {
   // First, collect all files in the directory
   std::vector<String> filesToDelete;
   
-  File dir = SD_MMC.open(path.c_str());
+#if defined(ARDUINO_XIAO_ESP32S3)
+    File dir = SD.open(path.c_str());
+  #else
+    File dir = SD_MMC.open(path.c_str());
+  #endif
+
   if (!dir || !dir.isDirectory()) {
     giveMutex();
     return false;
   }
-  
+
   File file = dir.openNextFile();
   while (file) {
     filesToDelete.push_back(String(file.name()));
@@ -265,19 +387,27 @@ bool StorageManager::removeDirectoryRecursively(const String& path) {
     file = dir.openNextFile();
   }
   dir.close();
-  
+
   // Delete all files
   bool success = true;
   for (const String& filePath : filesToDelete) {
-    if (!SD_MMC.remove(filePath.c_str())) {
+    #if defined(ARDUINO_XIAO_ESP32S3)
+      if (!SD.remove(filePath.c_str())) {
+    #else
+      if (!SD_MMC.remove(filePath.c_str())) {
+    #endif
       Serial.println("Failed to remove: " + filePath);
       success = false;
     }
   }
-  
+
   // Remove the directory itself
   if (success) {
-    success = SD_MMC.rmdir(path.c_str());
+    #if defined(ARDUINO_XIAO_ESP32S3)
+      success = SD.rmdir(path.c_str());
+    #else
+      success = SD_MMC.rmdir(path.c_str());
+    #endif
   }
   
   giveMutex();
@@ -290,10 +420,15 @@ void StorageManager::getSpaceInfo(uint64_t& totalBytes, uint64_t& usedBytes) {
     usedBytes = 0;
     return;
   }
-  
-  totalBytes = SD_MMC.totalBytes();
-  usedBytes = SD_MMC.usedBytes();
-  
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    totalBytes = SD.totalBytes();
+    usedBytes = SD.usedBytes();
+  #else
+    totalBytes = SD_MMC.totalBytes();
+    usedBytes = SD_MMC.usedBytes();
+  #endif
+
   giveMutex();
 }
 
@@ -473,16 +608,21 @@ bool StorageManager::writeFileAtomic(const String& path, const uint8_t* data, si
   if (!initialized || !takeMutex(5000)) {
     return false;
   }
-  
-  File file = SD_MMC.open(path.c_str(), "w");
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    File file = SD.open(path.c_str(), "w");
+  #else
+    File file = SD_MMC.open(path.c_str(), "w");
+  #endif
+
   if (!file) {
     giveMutex();
     return false;
   }
-  
+
   size_t written = file.write(data, size);
   file.close();
-  
+
   giveMutex();
   return written == size;
 }
@@ -491,25 +631,30 @@ bool StorageManager::readFileAtomic(const String& path, std::vector<uint8_t>& da
   if (!initialized || !takeMutex(5000)) {
     return false;
   }
-  
-  File file = SD_MMC.open(path.c_str(), "r");
+
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    File file = SD.open(path.c_str(), "r");
+  #else
+    File file = SD_MMC.open(path.c_str(), "r");
+  #endif
+
   if (!file) {
     giveMutex();
     return false;
   }
-  
+
   size_t fileSize = file.size();
   data.resize(fileSize);
-  
+
   size_t bytesRead = file.read(data.data(), fileSize);
   file.close();
-  
+
   giveMutex();
-  
+
   if (bytesRead != fileSize) {
     data.clear();
     return false;
   }
-  
+
   return true;
 }

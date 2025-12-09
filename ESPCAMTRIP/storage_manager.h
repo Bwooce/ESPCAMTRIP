@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <SD_MMC.h>
+#if defined(ARDUINO_XIAO_ESP32S3)
+#include <SD.h>
+#endif
 #include <vector>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>

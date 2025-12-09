@@ -168,10 +168,14 @@ void initializeSystem() {
   // Initialize system state
   SystemState::init();
   
-  // Initialize storage (SD card)
+  // Initialize storage (SD card) - Optional
   if (!StorageManager::init()) {
-    Serial.println("FATAL: Storage initialization failed!");
-    ESP.restart();
+    Serial.println("WARNING: SD card initialization failed!");
+    Serial.println("System will continue without SD card storage.");
+    Serial.println("Photos will not be saved locally, only uploaded to S3.");
+    // Continue without SD card - system can still work for NTRIP and direct upload
+  } else {
+    Serial.println("SD card storage available for local photo backup");
   }
   
   // Load configuration from SD card if exists
@@ -182,12 +186,16 @@ void initializeSystem() {
   
   // Initialize network (WiFi)
   if (!WiFiManager::connectWiFi()) {
-    Serial.println("FATAL: WiFi connection failed!");
-    ESP.restart();
+    Serial.println("WARNING: WiFi connection failed!");
+    Serial.println("System will continue without network connectivity.");
+    Serial.println("NTRIP and S3 upload will be disabled, but camera and AprilTag detection will work.");
+    // Continue without WiFi - core functionality can still work
+  } else {
+    Serial.println("WiFi connected successfully");
+
+    // Initialize time (only when WiFi is connected)
+    WiFiManager::initializeTime();
   }
-  
-  // Initialize time
-  WiFiManager::initializeTime();
   
   // Initialize camera
   if (!CameraManager::init()) {

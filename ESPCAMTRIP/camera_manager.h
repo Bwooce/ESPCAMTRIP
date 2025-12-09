@@ -31,6 +31,7 @@ public:
   static int getPhotoCount();
   static String getCurrentDirectory();
   static bool isCameraPin(int pin); // Moved to public
+
   
 private:
   static bool initialized;
@@ -41,6 +42,8 @@ private:
   // Camera configuration
   static camera_config_t getCameraConfig();
   static void applyCameraSettings();
+  static bool applyCameraSettingsSafe();
+  static bool validateCameraPins();
   static bool createCaptureDirectory();
   static String generateFilename();
   

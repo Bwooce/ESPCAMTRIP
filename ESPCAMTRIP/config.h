@@ -87,41 +87,28 @@ namespace Config {
       const uint8_t HREF_GPIO_NUM = 47;  // Horizontal reference
       const uint8_t PCLK_GPIO_NUM = 13;  // Pixel clock
     #elif defined(ARDUINO_ESP32S3_CAM_LCD)
-      // ESP32-S3-CAM-LCD camera pins (typically OV2640/OV5640)
-      const int8_t PWDN_GPIO_NUM = 32;   // Power down
-      const int8_t RESET_GPIO_NUM = -1;  // Reset (may vary)
-      const uint8_t XCLK_GPIO_NUM = 0;   // Camera clock
-      const uint8_t SIOD_GPIO_NUM = 26;  // I2C SDA (SCCB Data)
-      const uint8_t SIOC_GPIO_NUM = 27;  // I2C SCL (SCCB Clock)
-      const uint8_t Y9_GPIO_NUM = 35;    // Data line Y9
-      const uint8_t Y8_GPIO_NUM = 34;    // Data line Y8
-      const uint8_t Y7_GPIO_NUM = 39;    // Data line Y7
-      const uint8_t Y6_GPIO_NUM = 36;    // Data line Y6
-      const uint8_t Y5_GPIO_NUM = 21;    // Data line Y5
-      const uint8_t Y4_GPIO_NUM = 19;    // Data line Y4
-      const uint8_t Y3_GPIO_NUM = 18;    // Data line Y3
-      const uint8_t Y2_GPIO_NUM = 5;     // Data line Y2
-      const uint8_t VSYNC_GPIO_NUM = 25; // Vertical sync
-      const uint8_t HREF_GPIO_NUM = 23;  // Horizontal reference
-      const uint8_t PCLK_GPIO_NUM = 22;  // Pixel clock
+      // ESP32-S3-CAM-LCD: Camera pins are defined by board variant as macros
+      // Board defines: XCLK=40, SIOD=17, SIOC=18, Y9=39, Y8=41, Y7=42, etc.
+      // Pin macros are automatically available - no need to redefine them
+      // The board profile provides the correct pin definitions for ESP32-S3-CAM
     #else
-      // Generic ESP32-S3 camera pins (fallback - AI Thinker style)
-      const int8_t PWDN_GPIO_NUM = 32;   // Power down
-      const int8_t RESET_GPIO_NUM = -1;  // Reset
-      const uint8_t XCLK_GPIO_NUM = 0;   // Camera clock
-      const uint8_t SIOD_GPIO_NUM = 26;  // I2C SDA (SCCB Data)
-      const uint8_t SIOC_GPIO_NUM = 27;  // I2C SCL (SCCB Clock)
-      const uint8_t Y9_GPIO_NUM = 35;    // Data line Y9
-      const uint8_t Y8_GPIO_NUM = 34;    // Data line Y8
-      const uint8_t Y7_GPIO_NUM = 39;    // Data line Y7
-      const uint8_t Y6_GPIO_NUM = 36;    // Data line Y6
-      const uint8_t Y5_GPIO_NUM = 21;    // Data line Y5
-      const uint8_t Y4_GPIO_NUM = 19;    // Data line Y4
-      const uint8_t Y3_GPIO_NUM = 18;    // Data line Y3
-      const uint8_t Y2_GPIO_NUM = 5;     // Data line Y2
-      const uint8_t VSYNC_GPIO_NUM = 25; // Vertical sync
-      const uint8_t HREF_GPIO_NUM = 23;  // Horizontal reference
-      const uint8_t PCLK_GPIO_NUM = 22;  // Pixel clock
+      // Xiao ESP32S3 Sense camera pins (OV2640 older/OV3660 newer revisions)
+      const int8_t PWDN_GPIO_NUM = -1;   // Power down (not connected)
+      const int8_t RESET_GPIO_NUM = -1;  // Reset (not connected)
+      const uint8_t XCLK_GPIO_NUM = 10;  // Camera clock
+      const uint8_t SIOD_GPIO_NUM = 40;  // I2C SDA (SCCB Data)
+      const uint8_t SIOC_GPIO_NUM = 39;  // I2C SCL (SCCB Clock)
+      const uint8_t Y9_GPIO_NUM = 48;    // Data line Y9 (MSB)
+      const uint8_t Y8_GPIO_NUM = 11;    // Data line Y8
+      const uint8_t Y7_GPIO_NUM = 12;    // Data line Y7
+      const uint8_t Y6_GPIO_NUM = 14;    // Data line Y6
+      const uint8_t Y5_GPIO_NUM = 16;    // Data line Y5
+      const uint8_t Y4_GPIO_NUM = 18;    // Data line Y4
+      const uint8_t Y3_GPIO_NUM = 17;    // Data line Y3
+      const uint8_t Y2_GPIO_NUM = 15;    // Data line Y2 (LSB)
+      const uint8_t VSYNC_GPIO_NUM = 38; // Vertical sync
+      const uint8_t HREF_GPIO_NUM = 47;  // Horizontal reference
+      const uint8_t PCLK_GPIO_NUM = 13;  // Pixel clock
     #endif
   };
   
@@ -144,13 +131,13 @@ namespace Config {
   // Power Management Configuration
   struct PowerConfig {
     bool ENABLE_OPTIMIZATION = true;
-    bool SLEEP_BETWEEN_CAPTURES = true;
+    bool SLEEP_BETWEEN_CAPTURES = false;   // Disabled for PSRAM compatibility
     bool CAMERA_POWER_MANAGEMENT = true;
     uint32_t IDLE_TIMEOUT_MS = 30000;      // 30 seconds
     uint32_t DEEP_SLEEP_TIMEOUT_MS = 300000; // 5 minutes
     uint32_t CPU_FREQ_CAPTURE = 240;       // MHz during capture
     uint32_t CPU_FREQ_NORMAL = 160;        // MHz normal operation
-    uint32_t CPU_FREQ_IDLE = 80;           // MHz when idle
+    uint32_t CPU_FREQ_IDLE = 80;           // MHz when idle (PSRAM minimum)
   };
   
   // Upload Configuration
@@ -162,7 +149,7 @@ namespace Config {
   // Camera Configuration
   struct CameraConfig {
     uint8_t JPEG_QUALITY = 10;  // 0-63, lower is better quality
-    framesize_t FRAME_SIZE = FRAMESIZE_UXGA; // 1600x1200
+    framesize_t FRAME_SIZE = FRAMESIZE_SVGA; // 800x600 (reduced from UXGA for initial testing)
     const uint32_t XCLK_FREQ = 20000000; // 20MHz
   };
   

@@ -15,15 +15,25 @@ bool PowerManager::initialized = false;
 uint32_t PowerManager::currentCpuFreq = 240;
 unsigned long PowerManager::lastPowerCheck = 0;
 
-// Battery monitoring pins (ESP32-S3 compatible)
-#ifdef CONFIG_IDF_TARGET_ESP32S3
-  #define BATTERY_ADC_PIN 4     // ESP32-S3: GPIO 4 (ADC1_CH3)
-  #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_3
-#else
-  #define BATTERY_ADC_PIN 34    // ESP32: GPIO 34 (ADC1_CH6)
-  #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_6
+// Battery monitoring configuration
+// Define ENABLE_BATTERY_MONITORING to enable battery monitoring
+// #define ENABLE_BATTERY_MONITORING
+
+#ifdef ENABLE_BATTERY_MONITORING
+  // Battery monitoring pins
+  #if defined(ARDUINO_XIAO_ESP32S3)
+    // Xiao ESP32S3 Sense: Check GPIO 9 (BAT voltage divider) or GPIO 4
+    #define BATTERY_ADC_PIN 9     // Xiao ESP32S3: GPIO 9 (ADC1_CH8) - Battery voltage
+    #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_8
+  #elif defined(CONFIG_IDF_TARGET_ESP32S3)
+    #define BATTERY_ADC_PIN 4     // Generic ESP32-S3: GPIO 4 (ADC1_CH3)
+    #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_3
+  #else
+    #define BATTERY_ADC_PIN 34    // ESP32: GPIO 34 (ADC1_CH6)
+    #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_6
+  #endif
+  #define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0  // Adjust based on your voltage divider
 #endif
-#define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0  // Adjust based on your voltage divider
 
 void PowerManager::init() {
   Serial.println("Initializing power management...");
@@ -40,23 +50,33 @@ void PowerManager::init() {
     setCpuFrequency(Config::power.CPU_FREQ_NORMAL);
     
     // Configure dynamic frequency scaling
+    // Note: ESP32-S3 with PSRAM has limitations on power management
+    // - Light sleep disabled (incompatible with PSRAM)
+    // - Min frequency may need to be >= 80MHz for PSRAM stability
     esp_pm_config_t pm_config = {
       .max_freq_mhz = static_cast<int>(Config::power.CPU_FREQ_CAPTURE),
-      .min_freq_mhz = static_cast<int>(Config::power.CPU_FREQ_IDLE),
-      .light_sleep_enable = true
+      .min_freq_mhz = 80,  // PSRAM requires >= 80MHz minimum
+      .light_sleep_enable = false  // Disabled for PSRAM compatibility
     };
-    
+
     esp_err_t ret = esp_pm_configure(&pm_config);
     if (ret == ESP_OK) {
       Serial.println("Dynamic frequency scaling enabled");
     } else {
       Serial.printf("Failed to configure power management: %s\n", esp_err_to_name(ret));
+      Serial.println("Continuing with manual frequency control only");
+      // Continue - manual frequency control will still work
     }
   }
   
+#ifdef ENABLE_BATTERY_MONITORING
   // Initialize battery monitoring if available
   adc1_config_width(ADC_WIDTH_BIT_12);
   adc1_config_channel_atten((adc1_channel_t)BATTERY_ADC_CHANNEL, ADC_ATTEN_DB_12);
+  Serial.printf("Battery monitoring enabled on GPIO %d\n", BATTERY_ADC_PIN);
+#else
+  Serial.println("Battery monitoring disabled (define ENABLE_BATTERY_MONITORING to enable)");
+#endif
   
   initialized = true;
   lastPowerCheck = millis();
@@ -78,11 +98,13 @@ void PowerManager::coordinatePowerManagement() {
   // Update power state based on system activity
   updatePowerState();
   
+#ifdef ENABLE_BATTERY_MONITORING
   // Check battery status if monitoring is enabled
   if (isLowBattery()) {
     Serial.println("WARNING: Low battery detected!");
     // Could trigger emergency upload or shutdown
   }
+#endif
 }
 
 void PowerManager::enterLightSleep(uint32_t durationMs) {
@@ -138,36 +160,17 @@ void PowerManager::disableUnusedPeripherals() {
 // Bluetooth function removed - not needed since BT is disabled by default
 
 void PowerManager::configureUnusedPins() {
-  // Configure unused pins as inputs with pull-down to prevent floating
-  gpio_config_t io_conf = {};
-  io_conf.mode = GPIO_MODE_INPUT;
-  io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-  io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
-  io_conf.intr_type = GPIO_INTR_DISABLE;
-  
-  // Configure GPIO pins based on ESP32 variant
-#ifdef CONFIG_IDF_TARGET_ESP32S3
-  // ESP32-S3 has GPIO 0-48
-  const int max_gpio = 49;
-#else
-  // ESP32 has GPIO 0-39
-  const int max_gpio = 40;
-#endif
+  // DISABLED: GPIO configuration causing ESP32-S3 strapping pin conflicts
+  // The previous implementation tried to configure GPIO 0, 45, 46 which are
+  // strapping pins on ESP32-S3 and cannot be reconfigured after boot.
+  // This caused "GPIO_PIN mask error" and task watchdog resets.
 
-  for (int pin = 0; pin < max_gpio; pin++) {
-    if (!isSystemPin(pin) && !isPowerExemptPin(pin)) {
-      io_conf.pin_bit_mask = (1ULL << pin);
-      gpio_config(&io_conf);
-    }
-  }
-  
-  // Special handling for pins that should be pulled up
-  io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-  io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  
-  // Example: Configure strapping pins
-  io_conf.pin_bit_mask = (1ULL << 0) | (1ULL << 45) | (1ULL << 46);
-  gpio_config(&io_conf);
+  Serial.println("GPIO pin configuration disabled to prevent strapping pin conflicts");
+
+  // TODO: Implement safe GPIO configuration that excludes strapping pins:
+  // ESP32-S3 strapping pins to avoid: GPIO 0, 45, 46
+  // ESP32-S3 camera pins in use: GPIO 3, 11, 12, 13, 14, 17, 18, 21, 38, 39, 40, 41, 42, 47
+  // ESP32-S3 system pins to avoid: GPIO 19, 20 (USB), GPIO 26-32 (flash/PSRAM)
 }
 
 void PowerManager::configureWakeupSources() {
@@ -213,30 +216,31 @@ void PowerManager::handleWakeup() {
   }
 }
 
+#ifdef ENABLE_BATTERY_MONITORING
 float PowerManager::getBatteryVoltage() {
   // Read ADC value
   int adc_reading = adc1_get_raw((adc1_channel_t)BATTERY_ADC_CHANNEL);
-  
+
   // Convert to voltage (assuming 12-bit ADC, 3.3V reference)
   float voltage = (adc_reading / 4095.0) * 3.3;
-  
+
   // Apply voltage divider ratio
   voltage *= BATTERY_VOLTAGE_DIVIDER_RATIO;
-  
+
   return voltage;
 }
 
 uint8_t PowerManager::getBatteryPercentage() {
   float voltage = getBatteryVoltage();
-  
+
   // Battery percentage calculation (adjust for your battery type)
   // Example for single-cell LiPo: 4.2V = 100%, 3.0V = 0%
   const float MAX_VOLTAGE = 4.2;
   const float MIN_VOLTAGE = 3.0;
-  
+
   if (voltage >= MAX_VOLTAGE) return 100;
   if (voltage <= MIN_VOLTAGE) return 0;
-  
+
   return (uint8_t)((voltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE) * 100);
 }
 
@@ -244,6 +248,20 @@ bool PowerManager::isLowBattery() {
   // Consider battery low if below 20%
   return getBatteryPercentage() < 20;
 }
+#else
+// Stub functions when battery monitoring is disabled
+float PowerManager::getBatteryVoltage() {
+  return 5.0f; // Return USB voltage as fallback
+}
+
+uint8_t PowerManager::getBatteryPercentage() {
+  return 100; // Return 100% when USB powered
+}
+
+bool PowerManager::isLowBattery() {
+  return false; // Never low when USB powered
+}
+#endif
 
 void PowerManager::updatePowerState() {
   bool systemIdle = SystemState::isSystemIdle();
