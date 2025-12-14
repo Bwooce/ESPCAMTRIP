@@ -1,0 +1,3 @@
+[submodule "ESPCAMTRIP/libraries/apriltag-esp32"]
+	path = ESPCAMTRIP/libraries/apriltag-esp32
+	url = https://github.com/raspiduino/apriltag-esp32.git

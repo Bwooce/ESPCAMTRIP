@@ -6,26 +6,32 @@
 
 #ifdef VISUAL_CODE_TEST_MODE
 
+// Direct Circle21h7 LUT approach - 2MB lookup table for instant decoding
+#include "circle21h7_lut.h"
+
+// Optional: Include AprilTag library only for quad detection (not full decoding)
+#include "apriltag.h"
+#include "tagCircle21h7.h"    // 🎯 ONLY Circle21h7 family - used for all 3 ring sizes
+#include "common/image_u8.h"
+#include "common/zarray.h"
+
 // AprilTag detection results
 struct AprilTagDetection {
   bool found;                     // True if an AprilTag was detected
-  uint16_t tag_id;                // Decoded tag ID
-  float confidence;               // Detection confidence (0.0-1.0)
+  int id;                         // Decoded tag ID
+  float quality;                  // Decision margin (higher = better)
+  float center_x, center_y;       // Center position
+  float size;                     // Average side length in pixels
 
-  // Corner positions (clockwise from top-left)
+  // Corner positions
   struct {
-    uint16_t x, y;
+    float x, y;
   } corners[4];
 
-  // Center position
-  uint16_t center_x, center_y;
-
   // Pose estimation (if enabled)
-  struct {
-    float x, y, z;              // Position (mm from camera)
-    float roll, pitch, yaw;     // Orientation (radians)
-    bool valid;                 // True if pose was computed
-  } pose;
+  bool pose_valid;                // True if pose was computed
+  float pose_x, pose_y, pose_z;   // Position (mm from camera)
+  float pose_roll, pose_pitch, pose_yaw; // Orientation (radians)
 
   unsigned long timestamp;        // millis() when detected
 };
@@ -68,6 +74,7 @@ public:
   static void setParams(const AprilTagParams& params);
   static AprilTagParams getParams();
   static void setCameraIntrinsics(const CameraIntrinsics& intrinsics);
+  static void cleanup();
 
   // Tag detection
   static std::vector<AprilTagDetection> detectTags(camera_fb_t* frameBuffer);
@@ -121,12 +128,41 @@ private:
   static uint8_t* decimatedBuffer;
   static size_t bufferSize;
 
+  // Quad structure for quadrilateral detection
+  struct Point {
+    float x, y;
+  };
+
+  struct Quad {
+    Point corners[4];
+  };
+
   // AprilTag detection pipeline
   static void preprocessImage(uint8_t* input, uint8_t* output, uint16_t width, uint16_t height);
   static void detectEdges(uint8_t* buffer, uint16_t width, uint16_t height);
   static std::vector<std::vector<uint16_t[2]>> findQuadrilaterals(uint8_t* buffer, uint16_t width, uint16_t height);
   static bool validateQuadrilateral(uint16_t corners[4][2], uint16_t width, uint16_t height);
   static bool decodeTagFamily(uint8_t* pattern, uint16_t size, AprilTagFamily family, uint16_t& tag_id);
+
+  // Direct LUT decoding functions
+  static uint32_t extract21BitPattern(const uint8_t* gray, int width, int height, const float corners[4][2]);
+  static uint8_t decodeCircle21h7Direct(uint32_t pattern);
+  static bool detectTagsWithLUT(const uint8_t* gray, int width, int height, std::vector<AprilTagDetection>& results);
+  static void sampleTagGrid(const uint8_t* gray, int width, int height, const float corners[4][2], uint8_t grid[7][7]);
+  static uint32_t gridTo21BitCode(const uint8_t grid[7][7]);
+
+  // New detection functions (multiple conversion algorithms for performance testing)
+  static void convertRGB565ToGrayscale(const uint8_t* rgb565, uint8_t* gray, int width, int height);
+  static void convertRGB565ToGrayscaleFast(const uint8_t* rgb565, uint8_t* gray, int width, int height);
+  static void convertRGB565ToGrayscaleGreenOnly(const uint8_t* rgb565, uint8_t* gray, int width, int height);
+  static bool detectAprilTagInGrayscale(const uint8_t* gray, int width, int height, AprilTagDetection& result);
+  static void adaptiveThreshold(const uint8_t* gray, uint8_t* binary, int width, int height);
+  static void findQuadrilaterals(const uint8_t* binary, int width, int height, std::vector<Quad>& quads);
+  static bool isLikelyQuad(const uint8_t* binary, int width, int height, int x, int y, int size);
+  static bool testQuadAsAprilTag(const uint8_t* gray, int width, int height, const Quad& quad, AprilTagDetection& result);
+  static bool extractTagPattern(const uint8_t* gray, int width, int height, const Quad& quad, int gridSize, uint8_t pattern[][8]);
+  static bool decodeTag36h11(const uint8_t pattern[][8], int gridSize, uint16_t& tagId);
+  static float calculateTagQuality(const uint8_t pattern[][8], int gridSize);
 
   // AprilTag family decoders
   static bool decode16h5(uint8_t* pattern, uint16_t& tag_id);

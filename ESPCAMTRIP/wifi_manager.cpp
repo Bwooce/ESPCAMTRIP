@@ -1,6 +1,9 @@
 #include "wifi_manager.h"
 #include "config.h"
 #include "system_state.h"
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include <esp_task_wdt.h>
 
 // Static member definitions
 bool WiFiManager::connected = false;
@@ -40,6 +43,7 @@ bool WiFiManager::connectWiFi() {
     }
     
     delay(500);
+    esp_task_wdt_reset();  // Reset watchdog during WiFi connection wait
     Serial.print(".");
     digitalWrite(Config::pins.LED_STATUS_PIN, !digitalRead(Config::pins.LED_STATUS_PIN));
     attempts++;

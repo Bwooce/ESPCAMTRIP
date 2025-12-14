@@ -24,6 +24,7 @@ public:
   
   // Thread-safe atomic file operations (recommended)
   static bool writeFileAtomic(const String& path, const uint8_t* data, size_t size);
+  static bool writeFileChunked(File& file, const uint8_t* data, size_t size);
   static bool readFileAtomic(const String& path, std::vector<uint8_t>& data);
   static bool exists(const String& path);
   static bool remove(const String& path);

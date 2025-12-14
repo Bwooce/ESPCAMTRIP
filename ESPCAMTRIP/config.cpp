@@ -126,32 +126,72 @@ namespace Config {
       }
     }
 
-    // Load NTRIP settings
+    // Load NTRIP settings (supports both old single-service and new multi-service formats)
     if (!doc["ntrip"].isNull()) {
       JsonObject ntripObj = doc["ntrip"].as<JsonObject>();
+
+      // Check if enabled flag is present
       if (!ntripObj["enabled"].isNull()) {
         ntrip.enabled = ntripObj["enabled"].as<bool>();
       }
-      if (!ntripObj["server"].isNull()) {
-        ntrip.server = ntripObj["server"].as<String>();
+
+      // Check for new services array format first
+      if (!ntripObj["services"].isNull() && ntripObj["services"].is<JsonArray>()) {
+        Serial.println("Loading NTRIP services from array format...");
+        JsonArray servicesArray = ntripObj["services"].as<JsonArray>();
+
+        // Find service with highest priority (lowest number)
+        JsonObject bestService;
+        int bestPriority = 999;
+
+        for (JsonVariant serviceVar : servicesArray) {
+          JsonObject service = serviceVar.as<JsonObject>();
+          int priority = service["priority"].as<int>();
+
+          if (priority < bestPriority) {
+            bestPriority = priority;
+            bestService = service;
+          }
+        }
+
+        // Load the highest priority service
+        if (!bestService.isNull()) {
+          Serial.printf("Using NTRIP service: %s (priority %d)\n",
+                       bestService["name"].as<String>().c_str(), bestPriority);
+
+          ntrip.server = bestService["server"].as<String>();
+          ntrip.port = bestService["port"].as<int>();
+          ntrip.mountpoint = bestService["mountpoint"].as<String>();
+          ntrip.username = bestService["username"].as<String>();
+          ntrip.password = bestService["password"].as<String>();
+          ntrip.gga_message = bestService["gga_message"].as<String>();
+          ntrip.use_ssl = bestService["use_ssl"].as<bool>();
+        }
       }
-      if (!ntripObj["port"].isNull()) {
-        ntrip.port = ntripObj["port"].as<int>();
-      }
-      if (!ntripObj["mountpoint"].isNull()) {
-        ntrip.mountpoint = ntripObj["mountpoint"].as<String>();
-      }
-      if (!ntripObj["username"].isNull()) {
-        ntrip.username = ntripObj["username"].as<String>();
-      }
-      if (!ntripObj["password"].isNull()) {
-        ntrip.password = ntripObj["password"].as<String>();
-      }
-      if (!ntripObj["gga_message"].isNull()) {
-        ntrip.gga_message = ntripObj["gga_message"].as<String>();
-      }
-      if (!ntripObj["use_ssl"].isNull()) {
-        ntrip.use_ssl = ntripObj["use_ssl"].as<bool>();
+      // Fallback to old single-service format
+      else {
+        Serial.println("Loading NTRIP from legacy single-service format...");
+        if (!ntripObj["server"].isNull()) {
+          ntrip.server = ntripObj["server"].as<String>();
+        }
+        if (!ntripObj["port"].isNull()) {
+          ntrip.port = ntripObj["port"].as<int>();
+        }
+        if (!ntripObj["mountpoint"].isNull()) {
+          ntrip.mountpoint = ntripObj["mountpoint"].as<String>();
+        }
+        if (!ntripObj["username"].isNull()) {
+          ntrip.username = ntripObj["username"].as<String>();
+        }
+        if (!ntripObj["password"].isNull()) {
+          ntrip.password = ntripObj["password"].as<String>();
+        }
+        if (!ntripObj["gga_message"].isNull()) {
+          ntrip.gga_message = ntripObj["gga_message"].as<String>();
+        }
+        if (!ntripObj["use_ssl"].isNull()) {
+          ntrip.use_ssl = ntripObj["use_ssl"].as<bool>();
+        }
       }
     }
 

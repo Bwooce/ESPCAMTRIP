@@ -62,8 +62,11 @@ void PowerManager::init() {
     esp_err_t ret = esp_pm_configure(&pm_config);
     if (ret == ESP_OK) {
       Serial.println("Dynamic frequency scaling enabled");
+    } else if (ret == ESP_ERR_NOT_SUPPORTED) {
+      Serial.println("Dynamic frequency scaling not supported with PSRAM enabled");
+      Serial.println("Using manual frequency control (this is normal with PSRAM)");
     } else {
-      Serial.printf("Failed to configure power management: %s\n", esp_err_to_name(ret));
+      Serial.printf("Power management configuration failed: %s\n", esp_err_to_name(ret));
       Serial.println("Continuing with manual frequency control only");
       // Continue - manual frequency control will still work
     }

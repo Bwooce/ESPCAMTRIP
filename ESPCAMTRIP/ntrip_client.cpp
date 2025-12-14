@@ -244,8 +244,8 @@ int NtripClient::extractRtcmMessageType(const uint8_t* buffer, int length) {
 }
 
 bool NtripClient::shouldRelayMessage(int messageType) {
-  const uint16_t msglist[] = L1_MSGLIST; // Using L1 for M9N
-  
+  const uint16_t msglist[] = L1_L2_MSGLIST; // Using L1+L2 bands for dual-band receivers (F9P/ZED-X20P)
+
   for (size_t i = 0; i < sizeof(msglist) / sizeof(msglist[0]); i++) {
     if (msglist[i] == messageType) {
       return true;
@@ -370,11 +370,18 @@ bool NtripClient::connectToNtrip() {
 
   client->print(request);
 
-  // Wait for response
+  // Wait for response with watchdog feeding
   unsigned long timeout = millis();
   while (client->available() == 0) {
+    // Feed watchdog during response wait
+    esp_task_wdt_reset();
+
     if (millis() - timeout > 10000) {
-      Serial.println("Client timeout!");
+      Serial.println("Client timeout waiting for response!");
+      if (client->connected()) {
+        client->flush();
+        delay(50);
+      }
       client->stop();
       return false;
     }
@@ -386,10 +393,21 @@ bool NtripClient::connectToNtrip() {
   Serial.println("Response: " + responseLine);
 
   if (responseLine.indexOf("200 OK") > 0 || responseLine.indexOf("ICY 200 OK") > 0) {
-    // Skip headers
+    // Skip headers with timeout and watchdog feeding
+    unsigned long headerTimeout = millis();
     while (client->available()) {
+      // Feed watchdog during header processing
+      esp_task_wdt_reset();
+
       String line = client->readStringUntil('\n');
       if (line == "\r") break;
+
+      // Prevent infinite header reading
+      if (millis() - headerTimeout > 5000) {
+        Serial.println("Header reading timeout");
+        client->stop();
+        return false;
+      }
     }
 
     stats.connected = true;
@@ -398,8 +416,22 @@ bool NtripClient::connectToNtrip() {
     return true;
   }
 
-  Serial.println("Invalid response from NTRIP caster");
+  // Handle authentication and other errors gracefully
+  if (responseLine.indexOf("401") > 0) {
+    Serial.println("Authentication failed - check credentials");
+  } else if (responseLine.indexOf("404") > 0) {
+    Serial.println("Mountpoint not found");
+  } else {
+    Serial.println("Invalid response from NTRIP caster: " + responseLine);
+  }
+
+  // Non-blocking connection cleanup
+  if (client->connected()) {
+    client->flush();
+    delay(100);  // Brief delay for graceful closure
+  }
   client->stop();
+
   return false;
 }
 
@@ -654,7 +686,7 @@ void NtripClient::sendMavLinkRTCM(uint8_t* msg, uint16_t msglen) {
 
 const char* NtripClient::getRtcmMessageDescription(int messageType) {
   switch (messageType) {
-    // MSM Messages
+    // MSM4 Messages (Medium precision)
     case 1074: return "GPS MSM4";
     case 1075: return "GPS MSM5";
     case 1084: return "GLONASS MSM4";
@@ -665,16 +697,37 @@ const char* NtripClient::getRtcmMessageDescription(int messageType) {
     case 1115: return "QZSS MSM5";
     case 1124: return "BeiDou MSM4";
     case 1125: return "BeiDou MSM5";
-    
-    // RTK Messages
+
+    // MSM6/MSM7 Messages (High precision)
+    case 1076: return "GPS MSM6";
+    case 1077: return "GPS MSM7 (High Precision)";
+    case 1086: return "GLONASS MSM6";
+    case 1087: return "GLONASS MSM7 (High Precision)";
+    case 1096: return "Galileo MSM6";
+    case 1097: return "Galileo MSM7 (High Precision)";
+    case 1116: return "QZSS MSM6";
+    case 1117: return "QZSS MSM7 (High Precision)";
+    case 1126: return "BeiDou MSM6";
+    case 1127: return "BeiDou MSM7 (High Precision)";
+    case 1136: return "IRNSS MSM6";
+    case 1137: return "IRNSS MSM7 (High Precision)";
+
+    // RTK Station Messages
     case 1005: return "Stationary RTK Reference Station ARP";
     case 1006: return "Stationary RTK Reference Station ARP with Height";
+    case 1013: return "System Parameters";
+    case 1033: return "Receiver and Antenna Descriptors";
+
+    // Ephemeris Messages
     case 1019: return "GPS Ephemeris";
     case 1020: return "GLONASS Ephemeris";
     case 1042: return "BeiDou Ephemeris";
     case 1044: return "QZSS Ephemeris";
     case 1046: return "Galileo I/NAV Ephemeris";
-    
+
+    // Special Messages
+    case 1230: return "GLONASS Code-Phase Biases";
+
     default: return "Unknown RTCM Message";
   }
 }
@@ -732,15 +785,10 @@ void NtripClient::MessageTypeStats::logStatistics() {
 
 // NTRIP Client Task
 void ntripClientTask(void* parameter) {
-  // Initialize watchdog
-  esp_task_wdt_config_t wdtConfig;
-  wdtConfig.timeout_ms = Config::timing.WATCHDOG_TIMEOUT;
-  wdtConfig.idle_core_mask = (1 << 1);  // Core 1
-  wdtConfig.trigger_panic = true;
-  esp_task_wdt_init(&wdtConfig);
+  // Register with existing watchdog (DO NOT reinitialize - this breaks other tasks!)
+  // The watchdog system is already initialized by Arduino framework
   esp_task_wdt_add(NULL);
-  
-  Serial.println("NTRIP client task started");
+  Serial.println("NTRIP client task started with watchdog protection");
   NtripClient::init();
   NtripClient::startClient();
   
@@ -748,7 +796,13 @@ void ntripClientTask(void* parameter) {
   WiFiClient* client = nullptr;
   
   while (true) {
+    // Reset watchdog timer with debugging
     esp_task_wdt_reset();
+    static unsigned long lastNtripWatchdogReset = 0;
+    if (millis() - lastNtripWatchdogReset > 5000) { // Log every 5 seconds
+      Serial.printf("[DEBUG] NTRIP task watchdog reset at %lu ms\n", millis());
+      lastNtripWatchdogReset = millis();
+    }
     
     // Send MAVLink heartbeat
     NtripClient::sendMavLinkHeartbeat();

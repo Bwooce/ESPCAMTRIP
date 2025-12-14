@@ -29,10 +29,18 @@
 #define RTCM_MAX_LENGTH 1029
 #define RTCM_HEADER_LENGTH 3
 
-// RTCM Message lists for different GNSS capabilities
+// RTCM Message lists organized by GPS frequency bands
+// L1 Band (1575.42 MHz) - Primary GPS frequency, MSM4/MSM5 corrections
 #define L1_MSGLIST { 1005, 1006, 1074, 1075, 1084, 1085, 1094, 1095, 1114, 1115, 1019, 1020, 1042, 1044, 1046 }
+
+// L2 Band (1227.60 MHz) - Secondary GPS frequency, MSM6/MSM7 corrections (dual-band L1+L2)
 #define L2_MSGLIST { 1076, 1077, 1086, 1087, 1096, 1097, 1116, 1117 }
+
+// L5 Band (1176.45 MHz) - Modern GPS frequency, MSM6/MSM7 corrections
 #define L5_MSGLIST { 1126, 1127, 1128, 1129, 1136, 1137 }
+
+// Combined L1+L2 for dual-band receivers (u-blox F9P/ZED-X20P) - includes MSM7 precision
+#define L1_L2_MSGLIST { 1005, 1006, 1074, 1075, 1076, 1077, 1084, 1085, 1086, 1087, 1094, 1095, 1096, 1097, 1114, 1115, 1116, 1117, 1019, 1020, 1042, 1044, 1046 }
 
 // MAVLink configuration
 #define MAVLINK_SYSTEM_ID 128

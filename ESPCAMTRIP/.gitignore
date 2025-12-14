@@ -1,0 +1,5 @@
+# Exclude credential files and build artifacts
+data/
+spiffs.bin
+build*/
+partitions_*.csv
