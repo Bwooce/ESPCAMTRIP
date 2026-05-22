@@ -409,9 +409,9 @@ void GPSManager::printStatus() {
     Serial.printf("HDOP: %.2f, VDOP: %.2f\n", currentPosition.hdop, currentPosition.vdop);
     Serial.printf("Accuracy: %.2fm\n", currentPosition.accuracy);
     Serial.printf("Messages: %lu received, %lu processed\n",
-                  stats.messagesReceived, stats.messagesProcessed);
+                  (unsigned long)stats.messagesReceived, (unsigned long)stats.messagesProcessed);
     Serial.printf("Errors: %lu parse, %lu checksum\n",
-                  stats.parseErrors, stats.checksumErrors);
+                  (unsigned long)stats.parseErrors, (unsigned long)stats.checksumErrors);
     Serial.printf("Rate: %d msg/sec\n", stats.messageRate);
     Serial.println("----------------\n");
 }

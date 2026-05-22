@@ -95,7 +95,7 @@ void setup() {
   Serial.println("\n=== ESP32-S3-CAM Multi-Function System ===");
   Serial.println("Version: 2.0.0");
   Serial.println("Features: Photo Capture, S3 Upload, NTRIP RTK");
-  Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap());
+  Serial.printf("Free heap: %lu bytes\n", (unsigned long)ESP.getFreeHeap());
   
   // Initialize system
   initializeSystem();
@@ -111,7 +111,7 @@ void setup() {
     0
   );
   if (cameraTaskHandle == NULL) {
-    Serial.println("FATAL: Failed to create CameraTask!");
+    Serial.println("FATAL: Failed to create CameraTask.");
     // ESP.restart(); // Or handle error appropriately
   }
   
@@ -126,7 +126,7 @@ void setup() {
     0
   );
   if (uploadTaskHandle == NULL) {
-    Serial.println("FATAL: Failed to create UploadTask!");
+    Serial.println("FATAL: Failed to create UploadTask.");
     // ESP.restart(); // Or handle error appropriately
   }
   
@@ -142,7 +142,7 @@ void setup() {
       1
     );
     if (ntripTaskHandle == NULL) {
-      Serial.println("FATAL: Failed to create NTRIPClientTask!");
+      Serial.println("FATAL: Failed to create NTRIPClientTask.");
       // ESP.restart(); // Or handle error appropriately
     } else {
       Serial.println("NTRIP client initialized on core 1");
@@ -194,7 +194,7 @@ void loop() {
 void initializeSystem() {
   // Initialize PSRAM first (critical for camera operations)
   if (!PSRAMManager::init()) {
-    Serial.println("CRITICAL: PSRAM initialization failed!");
+    Serial.println("CRITICAL: PSRAM initialization failed.");
     Serial.println("Camera operations may fail at high resolutions");
     // Continue anyway for testing
   }
@@ -210,12 +210,12 @@ void initializeSystem() {
 
   // Initialize static EXIF GPS system
   if (!StaticEXIFGPS::init()) {
-    Serial.println("WARNING: Static EXIF GPS initialization failed!");
+    Serial.println("WARNING: Static EXIF GPS initialization failed.");
   }
   
   // Initialize storage (SD card)
   if (!StorageManager::init()) {
-    Serial.println("FATAL: Storage initialization failed!");
+    Serial.println("FATAL: Storage initialization failed.");
     ESP.restart();
   }
   
@@ -227,7 +227,7 @@ void initializeSystem() {
   
   // Initialize network (WiFi)
   if (!WiFiManager::connectWiFi()) {
-    Serial.println("FATAL: WiFi connection failed!");
+    Serial.println("FATAL: WiFi connection failed.");
     ESP.restart();
   }
   
@@ -237,7 +237,7 @@ void initializeSystem() {
   // Initialize GPS Manager
   if (Config::gps.enabled) {
     if (!GPSManager::init()) {
-      Serial.println("WARNING: GPS Manager initialization failed!");
+      Serial.println("WARNING: GPS Manager initialization failed.");
       // Continue without GPS - system can still work
     } else {
       Serial.println("GPS Manager initialized successfully");
@@ -246,12 +246,12 @@ void initializeSystem() {
 
   // Initialize Camera Mode Manager
   if (!CameraModeManager::init()) {
-    Serial.println("WARNING: Camera Mode Manager initialization failed!");
+    Serial.println("WARNING: Camera Mode Manager initialization failed.");
   }
 
   // Initialize camera (starts in IDLE mode)
   if (!CameraManager::init()) {
-    Serial.println("WARNING: Camera initialization failed!");
+    Serial.println("WARNING: Camera initialization failed.");
     // Continue without camera - NTRIP can still work
   }
 
@@ -423,7 +423,7 @@ void cameraTask(void* parameter) {
                     MAVLinkManager::sendLandingTarget(detection);
                   }
                 } else if (frame_count % 100 == 0) {
-                  Serial.printf("LANDING: Processed %u frames, no tags detected\n", frame_count);
+                  Serial.printf("LANDING: Processed %lu frames, no tags detected\n", (unsigned long)frame_count);
                 }
               }
             }
@@ -491,7 +491,7 @@ void uploadTask(void* parameter) {
 void performHealthCheck() {
   Serial.println("\n--- Health Check ---");
   Serial.printf("Uptime: %lu seconds\n", millis() / 1000);
-  Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap());
+  Serial.printf("Free heap: %lu bytes\n", (unsigned long)ESP.getFreeHeap());
   Serial.printf("WiFi RSSI: %d dBm\n", WiFi.RSSI());
 
   // Check PSRAM status
@@ -499,7 +499,7 @@ void performHealthCheck() {
   
   // Check SD card
   if (!StorageManager::verifyCard()) {
-    Serial.println("WARNING: SD card verification failed!");
+    Serial.println("WARNING: SD card verification failed.");
   } else {
     uint64_t totalBytes, usedBytes;
     StorageManager::getSpaceInfo(totalBytes, usedBytes);

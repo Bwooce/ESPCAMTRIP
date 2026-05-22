@@ -183,7 +183,7 @@ public:
 
     /**
      * Send landing target with orientation data from AprilTag detection
-     * Only call when you have valid pose estimation from AprilTag processing!
+     * Only call when you have valid pose estimation from AprilTag processing.
      */
     static bool sendLandingTargetWithOrientation(uint8_t target_id, float angle_x, float angle_y, float distance,
                                                float size_x, float size_y, const float rotation_matrix[3][3],
@@ -191,7 +191,7 @@ public:
 
     /**
      * Send complete landing target with position and orientation data
-     * Only call when you have full pose estimation from AprilTag processing!
+     * Only call when you have full pose estimation from AprilTag processing.
      */
     static bool sendLandingTargetFull(uint8_t target_id, float angle_x, float angle_y, float distance,
                                     float x, float y, float z, float size_x, float size_y,

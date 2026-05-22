@@ -13,7 +13,7 @@ bool StorageManager::init() {
   if (sdMutex == NULL) {
     sdMutex = xSemaphoreCreateMutex();
     if (sdMutex == NULL) {
-      Serial.println("Failed to create SD mutex!");
+      Serial.println("Failed to create SD mutex.");
       return false;
     }
   }
@@ -29,7 +29,7 @@ bool StorageManager::init() {
     
     // Try 4-bit mode
     if (!SD_MMC.begin()) {
-      Serial.println("SD Card mount failed!");
+      Serial.println("SD Card mount failed.");
       giveMutex();
       return false;
     }

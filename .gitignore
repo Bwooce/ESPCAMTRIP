@@ -31,3 +31,7 @@
 *.out
 *.app
 .DS_Store
+# Exclude private configuration files with credentials
+config.json
+*.json
+data/

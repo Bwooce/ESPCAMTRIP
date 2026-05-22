@@ -352,15 +352,15 @@ void AprilTagManager::updateStatistics(unsigned long process_time, int detection
 void AprilTagManager::printStatistics() {
     Serial.println("\n--- AprilTag Statistics ---");
     Serial.printf("Status: %s\n", initialized ? (enabled ? "Enabled" : "Disabled") : "Not initialized");
-    Serial.printf("Frames processed: %u\n", stats.frames_processed);
-    Serial.printf("Total detections: %u\n", stats.total_detections);
+    Serial.printf("Frames processed: %lu\n", (unsigned long)stats.frames_processed);
+    Serial.printf("Total detections: %lu\n", (unsigned long)stats.total_detections);
     Serial.printf("Detection rate: %.1f%%\n",
                   stats.frames_processed > 0 ?
                   (float)stats.total_detections / stats.frames_processed * 100.0f : 0.0f);
-    Serial.printf("Pose estimates: %u\n", stats.pose_estimates);
+    Serial.printf("Pose estimates: %lu\n", (unsigned long)stats.pose_estimates);
     Serial.printf("Avg/Max process time: %lu/%lu ms\n",
                   stats.avg_process_time_ms, stats.max_process_time_ms);
-    Serial.printf("Detection failures: %u\n", stats.detection_failures);
+    Serial.printf("Detection failures: %lu\n", (unsigned long)stats.detection_failures);
 
     if (has_active_detection) {
         Serial.printf("Last detection: ID=%d, age=%lu ms\n",

@@ -75,7 +75,7 @@ void PowerManager::coordinatePowerManagement() {
   
   // Check battery status if monitoring is enabled
   if (isLowBattery()) {
-    Serial.println("WARNING: Low battery detected!");
+    Serial.println("WARNING: Low battery detected.");
     // Could trigger emergency upload or shutdown
   }
 }
@@ -102,7 +102,7 @@ void PowerManager::setCpuFrequency(uint32_t freqMhz) {
   
   // Validate frequency
   if (freqMhz != 240 && freqMhz != 160 && freqMhz != 80) {
-    Serial.printf("Invalid CPU frequency: %u MHz\n", freqMhz);
+    Serial.printf("Invalid CPU frequency: %lu MHz\n", (unsigned long)freqMhz);
     return;
   }
   
@@ -110,7 +110,7 @@ void PowerManager::setCpuFrequency(uint32_t freqMhz) {
   setCpuFrequencyMhz(freqMhz);
   currentCpuFreq = freqMhz;
   
-  Serial.printf("CPU frequency set to %u MHz\n", freqMhz);
+  Serial.printf("CPU frequency set to %lu MHz\n", (unsigned long)freqMhz);
 }
 
 void PowerManager::disableUnusedPeripherals() {
@@ -122,7 +122,7 @@ void PowerManager::disableUnusedPeripherals() {
   configureUnusedPins();
   
   // Disable unused peripherals
-  // Note: Be careful not to disable peripherals in use!
+  // Note: Be careful not to disable peripherals in use.
   
   // Reduce WiFi power if not actively transmitting
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);

@@ -370,9 +370,9 @@ uint32_t HardcodedMAVLink::getMessagesSent() {
 
 void HardcodedMAVLink::printStatistics() {
     Serial.println("\n--- Hardcoded MAVLink Statistics ---");
-    Serial.printf("Total messages sent: %u\n", messages_sent);
-    Serial.printf("Heartbeats sent: %u\n", heartbeats_sent);
-    Serial.printf("Landing targets sent: %u\n", landing_targets_sent);
+    Serial.printf("Total messages sent: %lu\n", (unsigned long)messages_sent);
+    Serial.printf("Heartbeats sent: %lu\n", (unsigned long)heartbeats_sent);
+    Serial.printf("Landing targets sent: %lu\n", (unsigned long)landing_targets_sent);
     Serial.printf("System ID: %d, Component ID: %d\n", system_id, component_id);
     Serial.printf("Memory footprint: ~5KB (vs 200-400KB full library)\n");
     Serial.println("-----------------------------------\n");
@@ -497,16 +497,16 @@ void HardcodedMAVLink::testMessageDecoding() {
 
     // Test 3: Structure alignment and packing test
     Serial.println("\nTest 3: Structure alignment verification");
-    Serial.printf("  mavlink_heartbeat_t size: %d bytes (expected: 9)\n", sizeof(mavlink_heartbeat_t));
-    Serial.printf("  mavlink_landing_target_t size: %d bytes (expected: 60)\n", sizeof(mavlink_landing_target_t));
-    Serial.printf("  mavlink_gps_raw_int_t size: %d bytes (expected: 62)\n", sizeof(mavlink_gps_raw_int_t));
-    Serial.printf("  mavlink_header_t size: %d bytes (expected: 6)\n", sizeof(mavlink_header_t));
+    Serial.printf("  mavlink_heartbeat_t size: %lu bytes (expected: 9)\n", (unsigned long)sizeof(mavlink_heartbeat_t));
+    Serial.printf("  mavlink_landing_target_t size: %lu bytes (expected: 60)\n", (unsigned long)sizeof(mavlink_landing_target_t));
+    Serial.printf("  mavlink_gps_raw_int_t size: %lu bytes (expected: 62)\n", (unsigned long)sizeof(mavlink_gps_raw_int_t));
+    Serial.printf("  mavlink_header_t size: %lu bytes (expected: 6)\n", (unsigned long)sizeof(mavlink_header_t));
 
     if (sizeof(mavlink_heartbeat_t) == 9 && sizeof(mavlink_landing_target_t) == 60 &&
         sizeof(mavlink_gps_raw_int_t) == 62 && sizeof(mavlink_header_t) == 6) {
         Serial.println("  Structure packing: PASS");
     } else {
-        Serial.println("  Structure packing: FAIL - Incorrect sizes detected!");
+        Serial.println("  Structure packing: FAIL - Incorrect sizes detected.");
     }
 
     // Test 4: Endianness test with known values

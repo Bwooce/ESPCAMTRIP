@@ -12,7 +12,7 @@ bool PSRAMManager::init() {
 
     // Check if PSRAM is available
     if (ESP.getPsramSize() == 0) {
-        Serial.println("ERROR: PSRAM not detected!");
+        Serial.println("ERROR: PSRAM not detected.");
         Serial.println("Solution:");
         Serial.println("1. Ensure XIAO ESP32S3 Sense (with PSRAM) is used");
         Serial.println("2. In Arduino IDE: Tools > PSRAM > 'OPI PSRAM'");
@@ -73,7 +73,7 @@ void* PSRAMManager::allocate(size_t size, bool force_psram) {
         // Use PSRAM for large allocations or when forced
         ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
         if (ptr) {
-            Serial.printf("PSRAM allocated: %u bytes\n", size);
+            Serial.printf("PSRAM allocated: %lu bytes\n", (unsigned long)size);
         }
     }
 
@@ -81,7 +81,7 @@ void* PSRAMManager::allocate(size_t size, bool force_psram) {
     if (!ptr) {
         ptr = malloc(size);
         if (ptr && size >= 1024) {
-            Serial.printf("WARNING: Large allocation (%u bytes) using internal RAM\n", size);
+            Serial.printf("WARNING: Large allocation (%lu bytes) using internal RAM\n", (unsigned long)size);
         }
     }
 
@@ -122,15 +122,15 @@ void PSRAMManager::deallocate(void* ptr) {
 
 void* PSRAMManager::allocateCameraBuffer(size_t size) {
     if (!psram_available) {
-        Serial.printf("WARNING: Camera buffer (%u bytes) using internal RAM - may cause instability\n", size);
+        Serial.printf("WARNING: Camera buffer (%lu bytes) using internal RAM - may cause instability\n", (unsigned long)size);
         return malloc(size);
     }
 
     void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
     if (ptr) {
-        Serial.printf("Camera buffer allocated in PSRAM: %u bytes\n", size);
+        Serial.printf("Camera buffer allocated in PSRAM: %lu bytes\n", (unsigned long)size);
     } else {
-        Serial.printf("CRITICAL: Failed to allocate camera buffer (%u bytes) in PSRAM\n", size);
+        Serial.printf("CRITICAL: Failed to allocate camera buffer (%lu bytes) in PSRAM\n", (unsigned long)size);
         // Try internal RAM as last resort
         ptr = malloc(size);
     }
@@ -147,7 +147,7 @@ void PSRAMManager::printMemoryStatus() {
     Serial.println("\n--- Memory Status ---");
 
     // Internal RAM
-    Serial.printf("Internal RAM: %u bytes free\n", ESP.getFreeHeap());
+    Serial.printf("Internal RAM: %lu bytes free\n", (unsigned long)ESP.getFreeHeap());
 
     // PSRAM
     if (psram_available) {
@@ -170,24 +170,24 @@ void PSRAMManager::printDetailedStatus() {
 
     heap_caps_get_info(&internal_info, MALLOC_CAP_INTERNAL);
     Serial.printf("Internal RAM:\n");
-    Serial.printf("  Total: %u bytes\n", internal_info.total_free_bytes + internal_info.total_allocated_bytes);
-    Serial.printf("  Free: %u bytes\n", internal_info.total_free_bytes);
-    Serial.printf("  Allocated: %u bytes\n", internal_info.total_allocated_bytes);
-    Serial.printf("  Largest free block: %u bytes\n", internal_info.largest_free_block);
+    Serial.printf("  Total: %lu bytes\n", (unsigned long)(internal_info.total_free_bytes + internal_info.total_allocated_bytes));
+    Serial.printf("  Free: %lu bytes\n", (unsigned long)internal_info.total_free_bytes);
+    Serial.printf("  Allocated: %lu bytes\n", (unsigned long)internal_info.total_allocated_bytes);
+    Serial.printf("  Largest free block: %lu bytes\n", (unsigned long)internal_info.largest_free_block);
 
     if (psram_available) {
         heap_caps_get_info(&spiram_info, MALLOC_CAP_SPIRAM);
         Serial.printf("PSRAM:\n");
-        Serial.printf("  Total: %u bytes (%.2f MB)\n",
-                      spiram_info.total_free_bytes + spiram_info.total_allocated_bytes,
+        Serial.printf("  Total: %lu bytes (%.2f MB)\n",
+                      (unsigned long)(spiram_info.total_free_bytes + spiram_info.total_allocated_bytes),
                       (spiram_info.total_free_bytes + spiram_info.total_allocated_bytes) / 1024.0 / 1024.0);
-        Serial.printf("  Free: %u bytes (%.2f MB)\n",
-                      spiram_info.total_free_bytes,
+        Serial.printf("  Free: %lu bytes (%.2f MB)\n",
+                      (unsigned long)spiram_info.total_free_bytes,
                       spiram_info.total_free_bytes / 1024.0 / 1024.0);
-        Serial.printf("  Allocated: %u bytes (%.2f MB)\n",
-                      spiram_info.total_allocated_bytes,
+        Serial.printf("  Allocated: %lu bytes (%.2f MB)\n",
+                      (unsigned long)spiram_info.total_allocated_bytes,
                       spiram_info.total_allocated_bytes / 1024.0 / 1024.0);
-        Serial.printf("  Largest free block: %u bytes\n", spiram_info.largest_free_block);
+        Serial.printf("  Largest free block: %lu bytes\n", (unsigned long)spiram_info.largest_free_block);
     }
 
     Serial.println("-------------------------------\n");
@@ -222,7 +222,7 @@ void PSRAMManager::emergencyCleanup() {
     printDetailedStatus();
 
     if (!checkMemoryHealth()) {
-        Serial.println("CRITICAL: Memory health check failed after cleanup!");
+        Serial.println("CRITICAL: Memory health check failed after cleanup.");
         Serial.println("System may need restart...");
     }
 }

@@ -32,7 +32,7 @@ bool WiFiManager::connectWiFi() {
   
   while (WiFi.status() != WL_CONNECTED) {
     if (isTimeElapsed(startAttempt, Config::wifi.CONNECTION_TIMEOUT)) {
-      Serial.println("\nWiFi connection timeout!");
+      Serial.println("\nWiFi connection timeout.");
       enterCritical();
       connected = false;
       exitCritical();
@@ -56,7 +56,7 @@ bool WiFiManager::connectWiFi() {
   connectionStartTime = millis();
   exitCritical();
   
-  Serial.println("\nWiFi connected!");
+  Serial.println("\nWiFi connected.");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
   Serial.print("Gateway: ");
@@ -108,8 +108,8 @@ bool WiFiManager::isConnected() {
   
   // Handle disconnect logging outside critical section
   if (connected != currentStatus && !currentStatus) {
-    Serial.println("WiFi connection lost!");
-    Serial.printf("Disconnect count: %u\n", disconnectCount);
+    Serial.println("WiFi connection lost.");
+    Serial.printf("Disconnect count: %lu\n", (unsigned long)disconnectCount);
     digitalWrite(Config::pins.LED_STATUS_PIN, LOW);
   }
   
@@ -160,7 +160,7 @@ bool WiFiManager::initializeTime() {
     return true;
   }
   
-  Serial.println("Time synchronization failed!");
+  Serial.println("Time synchronization failed.");
   enterCritical();
   timeSynchronized = false;
   exitCritical();

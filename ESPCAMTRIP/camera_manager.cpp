@@ -68,7 +68,7 @@ bool CameraManager::startCapture() {
   
   // Check storage space
   if (!StorageManager::ensureMinimumSpace()) {
-    Serial.println("ERROR: Insufficient storage space!");
+    Serial.println("ERROR: Insufficient storage space.");
     return false;
   }
   
@@ -360,7 +360,7 @@ bool CameraManager::captureGeotaggedPhoto() {
       if (newSize > 0) {
         finalData = exifBuffer;
         finalDataSize = newSize;
-        Serial.printf("Static EXIF GPS embedded (%u bytes added)\n", newSize - fb->len);
+        Serial.printf("Static EXIF GPS embedded (%lu bytes added)\n", (unsigned long)(newSize - fb->len));
       } else {
         Serial.println("Failed to embed static EXIF GPS, using original JPEG");
         PSRAMManager::deallocate(exifBuffer);
@@ -391,12 +391,12 @@ bool CameraManager::captureGeotaggedPhoto() {
     // Save GPS metadata if geotagging is enabled
     if (isGeotaggingEnabled()) {
       saveGPSMetadata(filename);
-      Serial.printf("Geotagged photo %04d saved: %u bytes (GPS: %.6f, %.6f)\n",
-                    photoCount - 1, (unsigned)fb->len,
+      Serial.printf("Geotagged photo %04d saved: %lu bytes (GPS: %.6f, %.6f)\n",
+                    photoCount - 1, (unsigned long)fb->len,
                     GPSManager::getPosition().latitude,
                     GPSManager::getPosition().longitude);
     } else {
-      Serial.printf("Photo %04d saved: %u bytes\n", photoCount - 1, (unsigned)fb->len);
+      Serial.printf("Photo %04d saved: %lu bytes\n", photoCount - 1, (unsigned long)fb->len);
     }
     return true;
   }

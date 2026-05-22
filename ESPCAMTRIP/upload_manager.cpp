@@ -38,7 +38,7 @@ void UploadManager::loadTracking() {
   
   StorageManager::closeFile(file);
   
-  Serial.printf("Loaded %u uploaded directories\n", uploadedDirectories.size()); // Changed %d to %u
+  Serial.printf("Loaded %lu uploaded directories\n", (unsigned long)uploadedDirectories.size());
 }
 
 void UploadManager::saveTracking() {
@@ -105,7 +105,7 @@ void UploadManager::uploadPendingDirectories() {
     return;
   }
   
-  Serial.printf("Found %d directories to upload\n", pendingDirs.size());
+  Serial.printf("Found %lu directories to upload\n", (unsigned long)pendingDirs.size());
   
   // Upload each directory
   int successCount = 0;
@@ -121,14 +121,14 @@ void UploadManager::uploadPendingDirectories() {
         Serial.println("✓ Upload successful");
         break;
       } else {
-        Serial.printf("✗ Upload failed (attempt %d/%d)\n", 
-                      retry + 1, Config::s3.MAX_UPLOAD_RETRIES);
+        Serial.printf("✗ Upload failed (attempt %lu/%lu)\n", 
+                      (unsigned long)(retry + 1), (unsigned long)Config::s3.MAX_UPLOAD_RETRIES);
         if (retry < Config::s3.MAX_UPLOAD_RETRIES - 1) {
           // Exponential backoff: 2^retry * 1000ms (1s, 2s, 4s, 8s...)
           uint32_t backoffDelay = (1 << retry) * 1000;
           // Cap at 30 seconds
           backoffDelay = min(backoffDelay, (uint32_t)30000);
-          Serial.printf("Waiting %u ms before retry...\n", backoffDelay);
+          Serial.printf("Waiting %lu ms before retry...\n", (unsigned long)backoffDelay);
           delay(backoffDelay);
         }
       }
@@ -139,8 +139,8 @@ void UploadManager::uploadPendingDirectories() {
     }
   }
   
-  Serial.printf("\n=== Upload complete: %d/%d successful ===\n", 
-                successCount, pendingDirs.size());
+  Serial.printf("\n=== Upload complete: %lu/%lu successful ===\n", 
+                (unsigned long)successCount, (unsigned long)pendingDirs.size());
 }
 
 bool UploadManager::uploadDirectory(const String& directoryPath) {
@@ -262,10 +262,10 @@ uint32_t UploadManager::getPendingCount() {
 
 void UploadManager::printStatistics() {
   Serial.println("\n=== Upload Statistics ===");
-  Serial.printf("Total uploaded: %u directories\n", totalUploaded);
-  Serial.printf("Total failed: %u uploads\n", totalFailed);
-  Serial.printf("Currently tracked: %u directories\n", uploadedDirectories.size());
-  Serial.printf("Pending uploads: %u directories\n", getPendingCount());
+  Serial.printf("Total uploaded: %lu directories\n", (unsigned long)totalUploaded);
+  Serial.printf("Total failed: %lu uploads\n", (unsigned long)totalFailed);
+  Serial.printf("Currently tracked: %lu directories\n", (unsigned long)uploadedDirectories.size());
+  Serial.printf("Pending uploads: %lu directories\n", (unsigned long)getPendingCount());
   Serial.println("========================\n");
 }
 

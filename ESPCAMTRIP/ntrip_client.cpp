@@ -170,11 +170,11 @@ void NtripClient::printStatistics() {
   
   Serial.println("NTRIP Statistics:");
   Serial.printf("  Connected: %s\n", localStats.connected ? "Yes" : "No");
-  Serial.printf("  Messages received: %u\n", localStats.messagesReceived);
-  Serial.printf("  Messages validated: %u\n", localStats.messagesValidated);
-  Serial.printf("  Messages forwarded: %u\n", localStats.messagesForwarded);
-  Serial.printf("  Bytes received: %u\n", localStats.bytesReceived);
-  Serial.printf("  Connection attempts: %u\n", localStats.connectionAttempts);
+  Serial.printf("  Messages received: %lu\n", (unsigned long)localStats.messagesReceived);
+  Serial.printf("  Messages validated: %lu\n", (unsigned long)localStats.messagesValidated);
+  Serial.printf("  Messages forwarded: %lu\n", (unsigned long)localStats.messagesForwarded);
+  Serial.printf("  Bytes received: %lu\n", (unsigned long)localStats.bytesReceived);
+  Serial.printf("  Connection attempts: %lu\n", (unsigned long)localStats.connectionAttempts);
   
   if (localStats.lastMessageTime > 0) {
     Serial.printf("  Last message: %lu ms ago\n", millis() - localStats.lastMessageTime);
@@ -345,7 +345,7 @@ bool NtripClient::connectToNtrip() {
   unsigned long timeout = millis();
   while (client->available() == 0) {
     if (millis() - timeout > 10000) {
-      Serial.println("Client timeout!");
+      Serial.println("Client timeout.");
       client->stop();
       return false;
     }
